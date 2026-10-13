@@ -242,6 +242,20 @@ def creer_app(jarvis) -> FastAPI:
         return {"notifications": [{"type": e.type, "donnees": e.donnees, "horodatage": e.horodatage}
                                   for e in jarvis.bus.historique if e.type == "notification"][-50:]}
 
+    @app.post("/api/vision")
+    async def vision(image: UploadFile = File(...), question: str = "Décris ce qui est affiché.",
+                     a: dict = Depends(appareil)):
+        """Analyse d'une capture envoyée par un appareil (écran du Mac) par le modèle de vision du PC."""
+        from jarvis.outils.base import Contexte
+        from jarvis.outils.vision import interroger_vision
+
+        ctx = Contexte(config=jarvis.config, services=jarvis.services)
+        try:
+            analyse = await interroger_vision(ctx, await image.read(), question)
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(503, f"Vision indisponible : {e}") from e
+        return {"analyse": analyse}
+
     @app.get("/api/modeles/reveil/{nom}")
     async def modele_reveil(nom: str, a: dict = Depends(appareil)):
         """Modèles openWakeWord pour le mot de réveil du téléphone (TEL-02) : servis par le PC, pas par Internet."""

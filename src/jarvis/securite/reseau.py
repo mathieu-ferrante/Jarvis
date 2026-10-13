@@ -69,6 +69,7 @@ class GardeReseau:
         self.actif = False
         self.refus: list[dict] = []
         self._ips_autorisees: dict[str, str] = {}  # ip -> outil qui l'a résolue
+        self.hotes_globaux: tuple[str, ...] = ()  # ex. le PC Jarvis, pour un client (Mac) — jamais un tiers
         self._verrou = threading.Lock()
         self._dans_crochet = threading.local()
 
@@ -109,7 +110,9 @@ class GardeReseau:
             if _est_local(hote):
                 return
             contexte = _outil_courant.get()
-            if not contexte or not _correspond(hote, contexte[1]):
+            if self.hotes_globaux and _correspond(hote, self.hotes_globaux):
+                contexte = ("global", self.hotes_globaux)
+            elif not contexte or not _correspond(hote, contexte[1]):
                 self._refuser(hote, f"hôte non déclaré par {'l’outil ' + contexte[0] if contexte else 'le cœur'}")
             # Résolution autorisée : on retient les adresses pour la connexion qui suit
             self._dans_crochet.oui = True
@@ -129,7 +132,7 @@ class GardeReseau:
         if _est_local(ip):
             return
         contexte = _outil_courant.get()
-        if ip in self._ips_autorisees and contexte is not None:
+        if ip in self._ips_autorisees and (contexte is not None or self._ips_autorisees[ip] == "global"):
             return
         if contexte and _correspond(ip, contexte[1]):  # IP déclarée telle quelle (ex. Home Assistant)
             return

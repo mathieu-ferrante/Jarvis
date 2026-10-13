@@ -44,6 +44,14 @@ app = [
     "pypdf>=5",
     "icalendar>=6",
 ]
+# Agent macOS (lot J14) : barre des menus, raccourci, micro
+mac = [
+    "websockets>=13",
+    "rumps>=0.4; sys_platform == 'darwin'",
+    "pynput>=1.7",
+    "sounddevice>=0.5",
+    "soundfile>=0.13",
+]
 # Automatisation du navigateur (OUT-WEB) : utilise Microsoft Edge déjà installé, sans téléchargement.
 navigateur = ["playwright>=1.48"]
 dev = ["pytest>=8", "ruff>=0.8"]
