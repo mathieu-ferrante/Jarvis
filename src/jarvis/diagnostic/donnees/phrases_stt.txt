@@ -1,0 +1,10 @@
+# Phrases de test pour la transcription et pour l'enregistrement au micro.
+# Sans chiffres, pour que le taux d'erreur ne dépende pas de l'écriture des nombres.
+Jarvis, baisse un peu le son s'il te plaît.
+Lance Spotify et mets ma playlist de concentration.
+Rappelle-moi demain matin d'appeler le garage.
+Quel temps fera-t-il à Marseille ce week-end ?
+Comment était ma dernière session de deathmatch sur Counter-Strike ?
+Ferme Discord et active le mode jeu.
+Retrouve le PDF de ma facture d'électricité du mois dernier.
+Est-ce que mon processeur chauffe en ce moment ?

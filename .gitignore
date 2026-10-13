@@ -1,0 +1,23 @@
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+node_modules/
+dist/
+
+# Modèles, binaires et résultats bruts : hors du dépôt (volumineux ou personnels)
+modeles/
+outils/
+*.gguf
+*.onnx
+*.wav
+
+# Résultats du diagnostic : seul le rapport Markdown/JSON validé est commité, à la main
+diagnostic-resultats/
+
+# Secrets (SEC-05) : jamais dans le dépôt
+*.secret
+.env
+secrets/
