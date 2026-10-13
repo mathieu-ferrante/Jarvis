@@ -1,7 +1,9 @@
 # Jarvis — consignes pour Claude
 
 Le projet est entièrement décrit dans [CAHIER_DES_CHARGES.md](CAHIER_DES_CHARGES.md), complété
-par [BRIEF.md](BRIEF.md). C'est la référence : les lire en entier avant toute chose.
+par [BRIEF.md](BRIEF.md) et, pour les lots J11 à J18 (performance, multi-appareils), par
+[CAHIER_DES_CHARGES_EXTENSIONS.md](CAHIER_DES_CHARGES_EXTENSIONS.md). C'est la référence : les lire
+en entier avant toute chose.
 
 ## Mode de travail : autonomie de A à Z
 
