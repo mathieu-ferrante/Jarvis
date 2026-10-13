@@ -1,141 +1,187 @@
-"""OUT-JEU : interroger le coach de jeux Postgame par son API locale (COM-07 de Postgame).
+"""OUT-JEU : le coach de jeux Postgame, par son API locale (http://127.0.0.1:8765 par défaut).
 
-L'API de Postgame n'est pas encore figée : ce client découvre ses chemins dans `/openapi.json`
-(fourni d'office par FastAPI) et se rabat sur des chemins PROVISOIRES sinon. Tout reste local
-(127.0.0.1 ou le réseau Tailscale).
+Points d'API utilisés (Postgame, `src/postgame/api.py`) : `/api/parties?jeu=&limite=`,
+`/api/parties/{id}` (fiche + mesures + preuves), `/api/comptes` (classements), `/api/tft/stats`.
+
+RÈGLE ABSOLUE : Postgame fait rédiger ses débriefs par une IA dans le cloud (Gemini). Jarvis
+n'appelle donc JAMAIS `/api/parties/{id}/debrief`, qui déclencherait cette rédaction : il lit
+les mesures locales et c'est son propre modèle, local, qui rédige le débrief.
 """
 
 from __future__ import annotations
 
 import json
-import re
+import statistics
+import unicodedata
+from datetime import datetime, timedelta
 from urllib.parse import urlparse
 
 from jarvis.outils.base import Contexte, Outil, Resultat
 
 JEUX = ["cs2", "lol", "tft", "geometry_dash"]
-# Chemins provisoires, utilisés si /openapi.json ne permet pas de les trouver
-CHEMINS_PAR_DEFAUT = {
-    "parties": "/api/parties",
-    "partie": "/api/parties/{id}",
-    "debrief": "/api/parties/{id}/debrief",
-    "progression": "/api/progression",
-}
-MOTS_CLES = {
-    "parties": ("parties", "matches", "games", "sessions"),
-    "debrief": ("debrief",),
-    "progression": ("progression", "progress", "tendances"),
-}
+CHEMINS_INTERDITS = ("/debrief", "/debriefs")  # rédaction par IA distante côté Postgame
+ECART_SESSION = timedelta(hours=3)
+SYNONYMES_MODES = {"dm": "deathmatch", "match a mort": "deathmatch", "classee": "premier", "ranked": "classe"}
 
 
-def decouvrir_chemins(openapi: dict) -> dict[str, str]:
-    """Associe nos besoins aux chemins réels de l'API Postgame d'après sa description OpenAPI."""
-    chemins = dict(CHEMINS_PAR_DEFAUT)
-    tous = [c for c, ops in (openapi.get("paths") or {}).items() if "get" in ops]
-    for besoin, mots in MOTS_CLES.items():
-        candidats = [c for c in tous if any(m in c.lower() for m in mots)]
-        if besoin == "parties":
-            liste = [c for c in candidats if "{" not in c]
-            fiche = [c for c in candidats if re.search(r"\{[^}]+\}$", c) and "debrief" not in c]
-            if liste:
-                chemins["parties"] = min(liste, key=len)
-            if fiche:
-                chemins["partie"] = re.sub(r"\{[^}]+\}$", "{id}", min(fiche, key=len))
-        elif candidats:
-            chemins[besoin] = re.sub(r"\{[^}]+\}", "{id}", min(candidats, key=len))
-    return chemins
+def _norm(texte: str) -> str:
+    texte = unicodedata.normalize("NFKD", (texte or "").lower())
+    return "".join(c for c in texte if not unicodedata.combining(c)).strip()
 
 
 class ClientPostgame:
-    _cache_chemins: dict[str, dict] = {}
-
-    def __init__(self, ctx: Contexte, outil: Outil):
+    def __init__(self, ctx: Contexte):
         self.ctx = ctx
         self.base = ctx.config.integrations.postgame_url.rstrip("/")
         self.hote = urlparse(self.base).hostname or "127.0.0.1"
-        self.outil = outil
 
-    async def _get(self, chemin: str, **params):
-        jeton = self.ctx.coffre.lire("postgame_jeton") if self.ctx.coffre else None
-        entetes = {"Authorization": f"Bearer {jeton}"} if jeton else {}
+    async def get(self, chemin: str, **params):
+        if any(interdit in chemin for interdit in CHEMINS_INTERDITS):
+            raise PermissionError("débrief Postgame rédigé par une IA distante : interdit à Jarvis (SEC-04)")
         r = await self.ctx.http("GET", self.base + chemin, hotes=(self.hote,),
-                                params={k: v for k, v in params.items() if v not in (None, "")}, headers=entetes)
+                                params={k: v for k, v in params.items() if v not in (None, "")})
         if r.status_code == 404:
             raise LookupError(chemin)
         r.raise_for_status()
         return r.json()
 
-    async def chemins(self) -> dict[str, str]:
-        if self.base not in self._cache_chemins:
-            try:
-                self._cache_chemins[self.base] = decouvrir_chemins(await self._get("/openapi.json"))
-            except Exception:  # noqa: BLE001 — API non décrite : chemins provisoires
-                self._cache_chemins[self.base] = dict(CHEMINS_PAR_DEFAUT)
-        return self._cache_chemins[self.base]
+    async def parties(self, jeu: str, limite: int = 50) -> list[dict]:
+        donnees = await self.get("/api/parties", jeu=jeu, limite=limite)
+        return donnees.get("parties", []) if isinstance(donnees, dict) else list(donnees)
 
-    async def appel(self, besoin: str, ident: str | None = None, **params):
-        chemin = (await self.chemins())[besoin].replace("{id}", str(ident or ""))
-        return await self._get(chemin, **params)
+    async def fiche(self, ident) -> dict:
+        return await self.get(f"/api/parties/{ident}")
 
 
-def compacter(donnees, limite: int = 5000) -> str:
-    """JSON lisible et borné pour le modèle (les mesures brutes peuvent être volumineuses)."""
-    texte = json.dumps(donnees, ensure_ascii=False, indent=1, default=str)
-    return texte if len(texte) <= limite else texte[:limite] + "\n… (tronqué)"
+def _date(p: dict) -> datetime | None:
+    try:
+        return datetime.fromisoformat(str(p.get("date_partie", "")).replace("Z", "+00:00")).replace(tzinfo=None)
+    except ValueError:
+        return None
+
+
+def filtrer_mode(parties: list[dict], mode: str) -> list[dict]:
+    if not mode:
+        return parties
+    m = SYNONYMES_MODES.get(_norm(mode), _norm(mode))
+    return [p for p in parties if m in _norm(str(p.get("mode", "")))]
+
+
+def derniere_session(parties: list[dict]) -> list[dict]:
+    """Parties consécutives (moins de 3 h d'écart) les plus récentes. `parties` : plus récentes d'abord."""
+    session: list[dict] = []
+    for p in parties:
+        if not session:
+            session.append(p)
+            continue
+        precedente, actuelle = _date(session[-1]), _date(p)
+        if precedente and actuelle and precedente - actuelle <= ECART_SESSION:
+            session.append(p)
+        else:
+            break
+    return session
+
+
+def mesures_numeriques(fiche: dict) -> dict[str, float]:
+    """{nom: valeur} pour les mesures chiffrées d'une fiche (format souple)."""
+    sortie: dict[str, float] = {}
+    for m in fiche.get("mesures", []) or []:
+        if isinstance(m, dict):
+            nom = m.get("nom") or m.get("mesure") or m.get("cle")
+            valeur = m.get("valeur", m.get("value"))
+            if nom and isinstance(valeur, (int, float)) and not isinstance(valeur, bool):
+                sortie[str(nom)] = float(valeur)
+    return sortie
+
+
+def tendance(fiches: list[dict]) -> dict[str, dict]:
+    """Compare la moyenne des parties récentes à celle des plus anciennes, mesure par mesure."""
+    if len(fiches) < 4:
+        return {}
+    moitie = len(fiches) // 2
+    recentes, anciennes = fiches[:moitie], fiches[moitie:]
+    noms = set().union(*(mesures_numeriques(f) for f in fiches))
+    resultat = {}
+    for nom in sorted(noms):
+        r = [mesures_numeriques(f)[nom] for f in recentes if nom in mesures_numeriques(f)]
+        a = [mesures_numeriques(f)[nom] for f in anciennes if nom in mesures_numeriques(f)]
+        if r and a:
+            resultat[nom] = {"recent": round(statistics.mean(r), 2), "avant": round(statistics.mean(a), 2)}
+    return resultat
+
+
+def compacter(donnees, limite: int = 6000) -> str:
+    texte = json.dumps(donnees, ensure_ascii=False, default=str)
+    return texte if len(texte) <= limite else texte[:limite] + " … (tronqué)"
 
 
 class StatistiquesJeu(Outil):
     nom = "statistiques_jeu"
-    description = ("Interroge le coach de jeux Postgame : dernières parties ou sessions, mesures, progression, pour "
-                   "CS2, LoL, TFT ou Geometry Dash. Réponds ensuite avec les vrais chiffres, sans en inventer.")
+    description = ("Interroge le coach de jeux Postgame : dernière session, dernières parties ou progression, pour "
+                   "CS2, LoL, TFT ou Geometry Dash, avec les vraies mesures. Réponds ensuite avec ces chiffres, "
+                   "sans en inventer.")
     parametres = {"type": "object", "properties": {
         "jeu": {"type": "string", "enum": JEUX},
-        "mode": {"type": "string", "description": "Mode facultatif : deathmatch, premier, aram, ranked…"},
-        "periode": {"type": "string", "enum": ["derniere_session", "jour", "semaine", "mois"]},
-        "vue": {"type": "string", "enum": ["parties", "progression"], "description": "parties (défaut) ou progression."}},
+        "mode": {"type": "string", "description": "Facultatif : deathmatch, premier, aram, classé…"},
+        "vue": {"type": "string", "enum": ["derniere_session", "dernieres_parties", "progression", "classements"]}},
         "required": ["jeu"]}
     hotes = ("127.0.0.1", "localhost")
 
-    async def executer(self, ctx: Contexte, jeu: str, mode: str = "", periode: str = "derniere_session",
-                       vue: str = "parties") -> Resultat:
-        client = ClientPostgame(ctx, self)
+    async def executer(self, ctx: Contexte, jeu: str, mode: str = "", vue: str = "derniere_session") -> Resultat:
+        client = ClientPostgame(ctx)
         try:
-            if vue == "progression":
-                donnees = await client.appel("progression", jeu=jeu, mode=mode, periode=periode)
+            if vue == "classements":
+                return Resultat(True, f"Classements (Postgame) : {compacter(await client.get('/api/comptes'))}")
+            if jeu == "tft" and vue == "progression":
+                return Resultat(True, f"TFT (Postgame) : {compacter(await client.get('/api/tft/stats'))}")
+            parties = filtrer_mode(await client.parties(jeu, 100 if vue == "progression" else 40), mode)
+            if not parties:
+                return Resultat(True, f"Postgame n'a aucune partie de {jeu}{' en ' + mode if mode else ''}.")
+            if vue == "derniere_session":
+                choisies = derniere_session(parties)[:8]
+            elif vue == "dernieres_parties":
+                choisies = parties[:10]
             else:
-                limite = 1 if periode == "derniere_session" else 20
-                donnees = await client.appel("parties", jeu=jeu, mode=mode, periode=periode, limite=limite)
+                choisies = parties[:12]
+            fiches = [await client.fiche(p["id"]) for p in choisies]
         except LookupError:
             return Resultat.echec("Postgame répond, mais pas à ce chemin : son API a peut-être changé.")
+        except PermissionError as e:
+            return Resultat.echec(str(e))
         except Exception as e:  # noqa: BLE001
             return Resultat.echec(f"Postgame est injoignable ({type(e).__name__}) : est-il lancé ?")
-        if not donnees:
-            return Resultat(True, f"Postgame n'a aucune donnée {jeu} {mode} pour cette période.")
-        return Resultat(True, f"Données Postgame ({jeu}, {mode or 'tous modes'}, {periode}) :\n{compacter(donnees)}",
-                        donnees=donnees)
+        resume = [{**{k: p.get(k) for k in ("date_partie", "mode", "carte", "resultat", "score_joueur",
+                                             "score_adverse", "duree_s")},
+                   "mesures": mesures_numeriques(f)} for p, f in zip(choisies, fiches, strict=True)]
+        donnees: dict = {"jeu": jeu, "mode": mode or "tous", "vue": vue, "parties": resume}
+        if vue == "progression":
+            donnees["tendance"] = tendance(fiches)
+        return Resultat(True, f"Données Postgame : {compacter(donnees)}", donnees=donnees)
 
 
 class DebriefPartie(Outil):
     nom = "debrief_partie"
-    description = "Récupère le débrief détaillé d'une partie Postgame (par son identifiant, ou la dernière)."
+    description = ("Récupère la fiche détaillée d'une partie Postgame (mesures, moments clés) pour en faire le "
+                   "débrief toi-même : 3 priorités, points forts, avec les vrais chiffres.")
     parametres = {"type": "object", "properties": {
         "jeu": {"type": "string", "enum": JEUX}, "id": {"type": "string", "description": "Vide = dernière partie."}},
         "required": ["jeu"]}
     hotes = ("127.0.0.1", "localhost")
 
     async def executer(self, ctx: Contexte, jeu: str, id: str = "") -> Resultat:  # noqa: A002
-        client = ClientPostgame(ctx, self)
+        client = ClientPostgame(ctx)
         try:
             if not id:
-                parties = await client.appel("parties", jeu=jeu, limite=1)
-                liste = parties.get("parties", parties) if isinstance(parties, dict) else parties
-                if not liste:
+                parties = await client.parties(jeu, 1)
+                if not parties:
                     return Resultat(True, f"Aucune partie {jeu} dans Postgame.")
-                id = str(liste[0].get("id"))
-            debrief = await client.appel("debrief", id)
+                id = str(parties[0]["id"])
+            fiche = await client.fiche(id)  # données locales seulement, jamais /debrief
         except Exception as e:  # noqa: BLE001
-            return Resultat.echec(f"Débrief indisponible : {type(e).__name__} {e}")
-        return Resultat(True, f"Débrief Postgame de la partie {id} :\n{compacter(debrief)}", donnees=debrief)
+            return Resultat.echec(f"Fiche Postgame indisponible : {type(e).__name__} {e}")
+        fiche = {**fiche, "preuves": (fiche.get("preuves") or [])[:12]}
+        return Resultat(True, "Fiche Postgame (rédige le débrief à partir de ces mesures) : " + compacter(fiche, 8000),
+                        donnees=fiche)
 
 
 OUTILS = [StatistiquesJeu, DebriefPartie]

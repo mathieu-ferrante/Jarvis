@@ -114,18 +114,14 @@ def test_coeurs_reserves():
 # --- J9 : Postgame --------------------------------------------------------------------------
 
 
-def test_decouverte_api_postgame():
-    openapi = {"paths": {"/api/v1/matches": {"get": {}}, "/api/v1/matches/{match_id}": {"get": {}},
-                         "/api/v1/matches/{match_id}/debrief": {"get": {}}, "/api/v1/progress": {"get": {}},
-                         "/api/v1/import": {"post": {}}}}
-    c = postgame.decouvrir_chemins(openapi)
-    assert c == {"parties": "/api/v1/matches", "partie": "/api/v1/matches/{id}",
-                 "debrief": "/api/v1/matches/{id}/debrief", "progression": "/api/v1/progress"}
+PARTIES = [
+    {"id": 3, "jeu": "cs2", "date_partie": "2026-10-13T21:40:00", "mode": "Deathmatch", "carte": "de_mirage", "resultat": None},
+    {"id": 2, "jeu": "cs2", "date_partie": "2026-10-13T21:20:00", "mode": "Deathmatch", "carte": "de_dust2", "resultat": None},
+    {"id": 1, "jeu": "cs2", "date_partie": "2026-10-12T20:00:00", "mode": "Deathmatch", "carte": "de_inferno", "resultat": None},
+]
 
 
-def test_statistiques_postgame(monkeypatch):
-    postgame.ClientPostgame._cache_chemins.clear()
-
+def faux_postgame(monkeypatch, appels):
     class Rep:
         def __init__(self, d, code=200):
             self.d, self.status_code = d, code
@@ -137,21 +133,48 @@ def test_statistiques_postgame(monkeypatch):
             pass
 
     async def faux_http(self, methode, url, hotes=None, params=None, headers=None):
+        appels.append(url)
         assert hotes == ("127.0.0.1",)
-        if url.endswith("/openapi.json"):
-            return Rep({"paths": {"/api/parties": {"get": {}}, "/api/parties/{id}/debrief": {"get": {}}}})
-        assert url == "http://127.0.0.1:8000/api/parties" and params["jeu"] == "cs2" and params["mode"] == "deathmatch"
-        return Rep([{"id": 42, "mode": "deathmatch", "kills": 87, "deaths": 41, "precision_tete_pct": 31.5}])
+        if url.endswith("/api/parties"):
+            return Rep({"total": 3, "parties": PARTIES[: params.get("limite", 50)]})
+        ident = int(url.rsplit("/", 1)[1])
+        return Rep({"id": ident, "mesures": [{"nom": "kills_par_minute", "valeur": 2.0 + ident / 10},
+                                            {"nom": "precision_tete_pct", "valeur": 30 + ident}]})
 
     monkeypatch.setattr(Contexte, "http", faux_http)
+
+
+def test_derniere_session_postgame(monkeypatch):
+    appels = []
+    faux_postgame(monkeypatch, appels)
     outil = postgame.StatistiquesJeu()
-    r = asyncio.run(outil.executer(Contexte(config=Config(), outil=outil), jeu="cs2", mode="deathmatch"))
-    assert r.ok and "87" in r.message and "31.5" in r.message
+    r = asyncio.run(outil.executer(Contexte(config=Config(), outil=outil), jeu="cs2", mode="DM"))
+    assert r.ok and len(r.donnees["parties"]) == 2  # la partie de la veille n'est pas dans la session
+    assert r.donnees["parties"][0]["mesures"]["precision_tete_pct"] == 33
+    assert all("debrief" not in u for u in appels)
+
+
+def test_debrief_rédigé_localement_sans_appeler_postgame_debrief(monkeypatch):
+    appels = []
+    faux_postgame(monkeypatch, appels)
+    outil = postgame.DebriefPartie()
+    r = asyncio.run(outil.executer(Contexte(config=Config(), outil=outil), jeu="cs2"))
+    assert r.ok and "kills_par_minute" in r.message
+    assert appels[-1].endswith("/api/parties/3") and all("debrief" not in u for u in appels)
+
+
+def test_debrief_postgame_interdit():
+    client = postgame.ClientPostgame(Contexte(config=Config()))
+    with pytest.raises(PermissionError):
+        asyncio.run(client.get("/api/parties/3/debrief"))
+
+
+def test_tendance():
+    fiches = [{"mesures": [{"nom": "precision", "valeur": v}]} for v in (40, 38, 30, 28)]
+    assert postgame.tendance(fiches) == {"precision": {"recent": 39.0, "avant": 29.0}}
 
 
 def test_postgame_injoignable(monkeypatch):
-    postgame.ClientPostgame._cache_chemins.clear()
-
     async def faux_http(self, *a, **k):
         raise ConnectionError("refusé")
 

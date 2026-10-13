@@ -82,6 +82,7 @@ validé sur le PC de jeu** · `[ ]` à faire.
 | D16 | 2026-10-13 | Accès distant par **`tailscale serve`** (HTTPS privé) ; le serveur n'écoute que sur 127.0.0.1 | SEC-06/11 ; le micro du navigateur exige HTTPS |
 | D17 | 2026-10-13 | Notifications du téléphone par la connexion WebSocket directe (pas de Web Push) | Le Web Push passe par les serveurs de Google ; l'appli Android (J13) gardera la connexion en arrière-plan |
 | D18 | 2026-10-13 | Interface compilée (`web/dist`) commitée | Pas besoin de Node sur le PC de jeu |
+| D20 | 2026-10-13 | **Postgame : Jarvis lit les mesures locales et rédige lui-même les débriefs** ; l'appel à `/api/parties/{id}/debrief` est interdit dans le code | Postgame fait rédiger ses débriefs par Gemini : les déclencher depuis Jarvis ferait sortir des données à cause de Jarvis (règle absolue). Client aligné sur la vraie API (port 8765), vérifié contre le serveur de démonstration |
 | D19 | 2026-10-13 | Transcription anticipée dès 200 ms de silence | Masque le temps de transcription ; gain non mesurable sur le portable (bruit ±600 ms), à confirmer au banc |
 
 ## Valeurs provisoires (en attendant le PC de jeu)

@@ -88,7 +88,7 @@ class ConfigJeu:
 
 @dataclass
 class ConfigIntegrations:
-    postgame_url: str = "http://127.0.0.1:8000"
+    postgame_url: str = "http://127.0.0.1:8765"  # port par défaut de Postgame
     home_assistant_url: str = ""  # ex. http://homeassistant.local:8123
     # Mail (mot de passe d'application dans le coffre : imap_mot_de_passe)
     imap_hote: str = ""  # ex. imap.gmail.com
@@ -166,7 +166,7 @@ latitude = 43.2965
 longitude = 5.3698
 
 [integrations]
-postgame_url = "http://127.0.0.1:8000"
+postgame_url = "http://127.0.0.1:8765"
 home_assistant_url = ""
 
 # Routines (OUT-ROU) : une liste d'étapes {outil, arguments}.
