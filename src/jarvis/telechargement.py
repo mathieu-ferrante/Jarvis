@@ -77,8 +77,22 @@ def _afficher_progression(nom: str, fait: int, total: int, debut: float) -> None
     sys.stdout.flush()
 
 
-def telecharger(fichier: Fichier, dossier: Path, verifier_existant: bool = True) -> Path:
-    """Télécharge `fichier` dans `dossier` s'il manque, et le vérifie. Renvoie son chemin."""
+def telecharger(fichier: Fichier, dossier: Path, verifier_existant: bool = True, essais: int = 5) -> Path:
+    """Télécharge `fichier` dans `dossier` s'il manque, et le vérifie. Renvoie son chemin.
+
+    Une coupure réseau est reprise automatiquement là où elle s'est arrêtée."""
+    for essai in range(1, essais + 1):
+        try:
+            return _telecharger(fichier, dossier, verifier_existant)
+        except (OSError, TimeoutError) as e:
+            if essai == essais:
+                raise
+            print(f"\n  coupure ({e}), reprise {essai}/{essais - 1}…", flush=True)
+            time.sleep(min(2 ** essai, 30))
+    raise AssertionError("inatteignable")
+
+
+def _telecharger(fichier: Fichier, dossier: Path, verifier_existant: bool) -> Path:
     if not hote_autorise(fichier.url):
         raise TelechargementRefuse(f"Hôte non autorisé : {fichier.url}")
     cible = dossier / fichier.destination
