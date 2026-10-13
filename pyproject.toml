@@ -32,6 +32,7 @@ voix = [
 app = [
     "fastapi>=0.115",
     "uvicorn>=0.32",
+    "websockets>=13",
     "python-multipart>=0.0.12",
     "pystray>=0.19",
     "pillow>=11",
@@ -71,3 +72,6 @@ target-version = "py313"
 # Règles retenues : erreurs, style de base, bogues probables, modernisation, imports triés.
 select = ["E", "F", "W", "B", "UP", "I"]
 ignore = ["E501", "E741"]  # lignes de données longues ; « l » pour une ligne de résultat
+
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["fastapi.Depends", "fastapi.File", "fastapi.Header"]

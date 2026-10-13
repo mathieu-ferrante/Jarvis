@@ -94,6 +94,7 @@ class BoucleVocale:
         self.mesures: list[Mesure] = []
         self._annonces: asyncio.Queue[str] = asyncio.Queue()
         self._arret = asyncio.Event()
+        self._confirmation: asyncio.Future | None = None
 
     # --- Évènements -------------------------------------------------------------------------
 
@@ -159,7 +160,7 @@ class BoucleVocale:
             if self.reveil.traiter(trame):
                 self._emettre("reveil")
                 self._commencer_ecoute()
-        elif self.etat in ("ecoute", "suite"):
+        elif self.etat in ("ecoute", "suite", "confirmation"):
             self._ecouter(trame)
         elif self.etat in ("reflexion", "parole"):
             if self._detecter_interruption(trame):
@@ -201,6 +202,10 @@ class BoucleVocale:
         trop_long = len(self._tampon) * DUREE_TRAME_MS > p.duree_max_phrase_s * 1000
         if self._silence_ms >= p.fin_de_parole_ms or trop_long:
             son = np.concatenate(self._tampon)
+            if self.etat == "confirmation":
+                self._changer_etat("reflexion")
+                self._tache_confirmation = asyncio.create_task(self._transcrire_confirmation(son))
+                return
             # NF-01 se mesure depuis la vraie fin de parole, silence d'attente compris
             mesure = Mesure(fin_parole=time.monotonic() - self._silence_ms / 1000)
             self._changer_etat("reflexion")
@@ -219,6 +224,33 @@ class BoucleVocale:
             self._tache.cancel()
         self._tache = None
         self._interruption_compte = 0
+
+    # --- Confirmation à la voix (SEC-01) ----------------------------------------------------
+
+    async def demander_confirmation(self, question: str, delai_s: float = 12.0) -> bool | None:
+        """Pose la question, écoute une réponse, renvoie oui (True), non (False) ou None si incompris."""
+        from jarvis.securite.permissions import interpreter_reponse
+
+        self._confirmation = asyncio.get_running_loop().create_future()
+        try:
+            son, taux = await asyncio.to_thread(self.tts.synthetiser, question)
+            self._changer_etat("parole")
+            await self.sortie.jouer(son, taux)
+            self._commencer_ecoute("confirmation")
+            texte = await asyncio.wait_for(self._confirmation, delai_s)
+        except TimeoutError:
+            texte = ""
+        finally:
+            self._confirmation = None
+            if self.etat == "confirmation":
+                self._changer_etat("reflexion")
+        self._emettre("confirmation", texte=texte)
+        return interpreter_reponse(texte) if texte else None
+
+    async def _transcrire_confirmation(self, son: np.ndarray) -> None:
+        texte = await asyncio.to_thread(self.stt.transcrire, son.astype(np.float32) / 32768)
+        if self._confirmation and not self._confirmation.done():
+            self._confirmation.set_result(retirer_mot_reveil(texte))
 
     # --- Réponse ----------------------------------------------------------------------------
 

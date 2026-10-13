@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from jarvis.agent.contexte import date_fr
+from jarvis.agent.contexte import JOURS, MOIS
 from jarvis.outils.base import Contexte, Niveau, Outil, Resultat
 
 
@@ -60,7 +60,9 @@ class Heure(Outil):
     description = "Donne la date et l'heure exactes."
 
     async def executer(self, ctx: Contexte) -> Resultat:
-        return Resultat(True, date_fr(datetime.now()))
+        m = datetime.now()
+        return Resultat(True, f"Il est {m.hour} h {m.minute:02d}, nous sommes le {JOURS[m.weekday()]} {m.day} "
+                              f"{MOIS[m.month - 1]}.", donnees={"iso": m.isoformat(timespec="minutes")})
 
 
 OUTILS = [LancerTacheDeFond, EtatTaches, JournalActions, Heure]

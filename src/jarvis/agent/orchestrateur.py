@@ -84,6 +84,8 @@ class Tour:
     conversation: str
     contenu_externe: bool = False
     actions: list[dict] = field(default_factory=list)
+    signatures: set = field(default_factory=set)
+    actions_rapides: bool = False
 
 
 class Orchestrateur:
@@ -139,6 +141,16 @@ class Orchestrateur:
             return
         self.arret.clear()
         tour = Tour(texte, canal, origine or canal, conversation)
+        commande = self._commande_rapide(texte)
+        if commande is not None:
+            tour.actions_rapides = True
+            resultat = await self.executer_appel(AppelOutil("rapide", commande.outil, dict(commande.args)), tour)
+            texte_final = (commande.gabarit.format(message=resultat.message) if resultat.ok
+                           else f"Je n'ai pas pu : {resultat.message}")
+            yield texte_final
+            self._terminer(tour, texte, texte_final, [{"role": "user", "content": texte},
+                                                     {"role": "assistant", "content": texte_final}], 0)
+            return
         client = routeur.choisir(texte, self.llm_rapide, self.llm)
         mode = getattr(getattr(self.config, "llm", None), "reflexion", "auto")
         reflexion = client is self.llm and not self.en_jeu() and routeur.besoin_reflexion(texte, mode)
@@ -184,7 +196,13 @@ class Orchestrateur:
             if texte_etape and not texte_etape.endswith((" ", "\n")):
                 yield " "
             for appel in reponse.appels:
-                resultat = await self.executer_appel(appel, tour)
+                signature = (appel.nom, json.dumps(appel.args, sort_keys=True, ensure_ascii=False))
+                if signature in tour.signatures:  # garde anti-boucle : jamais deux fois la même action
+                    resultat = Resultat(False, "Cet appel identique a déjà été exécuté dans ce tour : ne le refais "
+                                               "pas, réponds maintenant à Mathieu avec ce que tu sais.")
+                else:
+                    tour.signatures.add(signature)
+                    resultat = await self.executer_appel(appel, tour)
                 messages.append({"role": "tool", "tool_call_id": appel.id,
                                  "content": self._masquer(formater_pour_modele(resultat))})
         else:
@@ -199,6 +217,11 @@ class Orchestrateur:
             texte_final = resume
             yield resume
 
+        self._terminer(tour, texte, texte_final, messages, debut_tour)
+
+    def _terminer(self, tour: Tour, texte: str, texte_final: str, messages: list[dict], debut_tour: int) -> None:
+        conversation, canal = tour.conversation, tour.canal
+        historique = self.conversations.setdefault(conversation, [])
         # Historique compact : demande + réponse, et les échanges d'outils tronqués
         for message in messages[debut_tour:]:
             copie = dict(message)
@@ -214,7 +237,9 @@ class Orchestrateur:
             except Exception:  # noqa: BLE001
                 log.exception("Historique non enregistré")
             automatique = getattr(getattr(self.config, "llm", None), "souvenirs_automatiques", True)
-            if automatique and tour.origine in ("voix", "texte") and not tour.contenu_externe and not self.en_jeu():
+            origine_humaine = tour.origine.split(":")[0] in ("voix", "texte")
+            if automatique and origine_humaine and not tour.contenu_externe and not self.en_jeu() \
+                    and not tour.actions_rapides:
                 from jarvis.memoire.extraction import extraire_et_retenir
 
                 tache = asyncio.create_task(extraire_et_retenir(self.llm_rapide or self.llm, self.memoire, texte,
@@ -222,6 +247,31 @@ class Orchestrateur:
                 self._taches_fond.add(tache)
                 tache.add_done_callback(self._taches_fond.discard)
         self.bus.publier("reponse", texte=texte_final, conversation=conversation, actions=tour.actions)
+
+    def _commande_rapide(self, texte: str):
+        """Chemin rapide : seulement si l'outil visé existe et que la cible est connue."""
+        from jarvis.agent import commandes_rapides
+
+        def application_connue(nom: str) -> bool:
+            if "lancer_application" not in self.registre:
+                return False
+            from jarvis.outils.systeme import processus_correspondants, trouver_application
+
+            try:
+                return trouver_application(nom) is not None or bool(processus_correspondants(nom))
+            except Exception:  # noqa: BLE001
+                return False
+
+        def routine_connue(nom: str) -> bool:
+            from jarvis.outils import routines
+            from jarvis.outils.base import Contexte
+
+            return routines._cle(nom) in routines.toutes(Contexte(config=self.config))
+
+        commande = commandes_rapides.reconnaitre(texte, application_connue, routine_connue)
+        if commande is None or commande.outil not in self.registre:
+            return None
+        return commande
 
     async def repondre_texte(self, texte: str, **kwargs) -> str:
         return "".join([m async for m in self.repondre(texte, **kwargs)]).strip()

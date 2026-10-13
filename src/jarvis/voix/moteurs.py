@@ -166,15 +166,31 @@ class TranscripteurFactice:
 
 
 class Synthese:
-    """Piper ou Kokoro (CPU)."""
+    """Piper ou Kokoro (CPU). Les phrases courtes déjà dites sont gardées en cache (« C'est fait. ») :
+    elles repartent sans nouvelle synthèse (extensions §2.2, réponses préenregistrées)."""
 
-    def __init__(self, cle_voix: str):
+    TAILLE_CACHE = 256
+    PHRASES_COURANTES = ("C'est fait.", "D'accord.", "En pause.", "C'est reparti.", "Morceau suivant.",
+                         "Laisse-moi réfléchir.", "D'accord, j'arrête tout.", "Je n'ai pas pu le faire.")
+
+    def __init__(self, cle_voix: str, prechauffer: bool = True):
         from jarvis.diagnostic.tts import Synthetiseur
 
         self._synth = Synthetiseur(modeles.voix(cle_voix), modeles.dossier_pour(modeles.voix(cle_voix).fichiers[0]))
+        self._cache: dict[str, tuple[np.ndarray, int]] = {}
+        if prechauffer:
+            for phrase in self.PHRASES_COURANTES:
+                self.synthetiser(phrase)
 
     def synthetiser(self, texte: str) -> tuple[np.ndarray, int]:
-        return self._synth.synthetiser(texte)
+        if texte in self._cache:
+            return self._cache[texte]
+        resultat = self._synth.synthetiser(texte)
+        if len(texte) <= 60:
+            if len(self._cache) >= self.TAILLE_CACHE:
+                self._cache.pop(next(iter(self._cache)))
+            self._cache[texte] = resultat
+        return resultat
 
 
 class SyntheseFactice:

@@ -129,7 +129,10 @@ def _telecharger(fichier: Fichier, dossier: Path, verifier_existant: bool) -> Pa
     sys.stdout.write("\n")
 
     taille = partiel.stat().st_size
+    if taille < fichier.taille:  # connexion fermée trop tôt : on garde le partiel et on reprendra
+        raise ConnectionError(f"{fichier.nom} : {taille} octets reçus sur {fichier.taille}")
     if taille != fichier.taille:
+        partiel.unlink()
         raise TelechargementRefuse(f"{fichier.nom} : taille {taille} au lieu de {fichier.taille}")
     empreinte = sha256_fichier(partiel)
     if empreinte != fichier.sha256:
