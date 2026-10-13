@@ -3,32 +3,56 @@
 Assistant personnel vocal, le plus puissant possible, **100 % local** : aucune information ne
 sort du PC à cause de Jarvis, aucun appel à une IA dans le cloud.
 
-- Cahier des charges : [CAHIER_DES_CHARGES.md](CAHIER_DES_CHARGES.md) (complété par [BRIEF.md](BRIEF.md))
+- Cahier des charges : [CAHIER_DES_CHARGES.md](CAHIER_DES_CHARGES.md), [extensions](CAHIER_DES_CHARGES_EXTENSIONS.md), [BRIEF.md](BRIEF.md)
 - Avancement et décisions : [PLAN.md](PLAN.md)
 - À lancer sur le PC de jeu : [A_VALIDER.md](A_VALIDER.md)
 
 ## État
 
-| Lot | État |
-|---|---|
-| J0 — Diagnostic et choix par la mesure | Script prêt, testé en mode rapide sur le poste de développement. **Pas encore lancé sur le PC de jeu** |
-| J1 à J10 | À faire |
+Lots J0 à J11 **codés et testés sur le poste de développement** (145 tests automatisés) ;
+**aucun n'a encore été validé sur le PC de jeu** : performances, voix et modèles définitifs
+se mesurent là-bas (voir A_VALIDER.md). Lots J12 à J18 : en cours.
 
-## Diagnostic (lot J0)
+## Ce que fait Jarvis
 
-Sur le PC de jeu, double-cliquer sur `diagnostic.cmd` (mode opératoire complet dans
-[A_VALIDER.md](A_VALIDER.md)). Il prépare un environnement Python 3.13, télécharge les outils
-et modèles candidats (vérifiés par SHA-256, depuis github.com et huggingface.co uniquement),
-puis mesure :
+- **Voix** : « Jarvis… » (ou Ctrl+Alt+J), réponse parlée dès la première phrase, interruption,
+  conversation continue, confirmation à la voix. Transcription Parakeet v3, voix Piper, tout
+  sur CPU.
+- **Cerveau** : modèle local (llama.cpp Vulkan) choisi par le diagnostic ; agent qui enchaîne
+  les outils, vérifie ses actions et dit honnêtement quand il échoue ; réflexion approfondie
+  seulement quand elle sert ; commandes fréquentes traitées sans le modèle.
+- **Mains** : ~60 outils — applications, fenêtres, volume, sortie audio, luminosité, fichiers,
+  musique et Spotify, rappels, routines, Python en bac à sable, web, vision de l'écran, mail,
+  agenda, Discord, Postgame, dépôts git, Home Assistant.
+- **Mémoire** : se souvient de Mathieu (faits datés et sourcés, appris aussi des conversations),
+  recherche par le sens, historique, oubli sur demande, sauvegarde chiffrée.
+- **Initiative** : briefing du matin, suggestions discrètes, rappels, tâches de fond notifiées.
+- **Partout** : interface web installable (PWA) sur le PC, le téléphone et le Mac, via Tailscale.
+- **Mode jeu** : détecte la partie, libère la VRAM, passe en silence.
 
-- le matériel et ce que voit llama.cpp (Vulkan) ;
-- les modèles de langage : débit, latence jusqu'à la première phrase, batterie de 29 commandes
-  d'appel d'outils en français, qualité du français, vision ;
-- la transcription (faster-whisper, whisper.cpp, Parakeet), sur voix de synthèse, bruitée et au micro ;
-- les voix de synthèse (Piper, Kokoro), avec des fichiers à écouter ;
-- le mot de réveil (coût CPU, détections).
+## Sécurité
 
-Il écrit `diagnostic-resultats/<date>/rapport.md` avec les décisions prises par la mesure.
+- Lecture libre, actions réversibles annoncées, actions irréversibles ou sortantes **toujours
+  confirmées** (voix, clic, empreinte sur Android) ; journal de toutes les actions.
+- Le contenu lu (mail, page, fichier, écran) est une donnée, jamais une instruction.
+- Garde réseau : liste blanche des sorties par outil, fournisseurs d'IA bloqués, test
+  anti-fuite automatisé ; serveur sur 127.0.0.1 uniquement, accès distant par Tailscale.
+- Secrets chiffrés (DPAPI), jamais dans le dépôt ni montrés au modèle ; arrêt d'urgence
+  Ctrl+Alt+K ou « Jarvis, stop ».
+
+## Installation (PC de jeu)
+
+```
+diagnostic.cmd --donnees D:\Jarvis      (une fois : choisit les modèles par la mesure)
+installer.cmd -Demarrage -Tailscale
+jarvis.cmd --fenetre
+```
+
+Commandes utiles : `python -m jarvis outils` (liste des outils), `python -m jarvis banc`
+(performance et batterie de commandes), `python -m jarvis secrets definir <nom>`,
+`python -m jarvis sauvegarde --cle`, `python -m jarvis appareils`.
+
+Configuration : `%LOCALAPPDATA%\Jarvis\jarvis.toml` (créé au premier lancement, commenté).
 
 ## Développement
 
@@ -36,23 +60,29 @@ Poste de développement (sans GPU de jeu) :
 
 ```
 py -3.13 -m venv .venv
-.venv\Scripts\python -m pip install -e ".[voix,dev]"
-.venv\Scripts\python -m pytest
-.venv\Scripts\python -m jarvis.diagnostic --rapide --sans-micro
+.venv\Scripts\python -m pip install -e ".[voix,app,dev]"
+.venv\Scripts\python -m pytest                 # tests rapides
+.venv\Scripts\python -m pytest -m lent         # bout en bout avec les vrais moteurs
+.venv\Scripts\python -m jarvis diagnostic --rapide --sans-micro
 ```
 
-Le mode `--rapide` utilise de petits modèles (Qwen3.5 0.8B, Whisper base, Parakeet q4) pour
-valider le script sans le matériel cible. Les modèles et outils sont rangés hors du dépôt, dans
-`%LOCALAPPDATA%\Jarvis` (ou le dossier donné par `JARVIS_DONNEES` / `--donnees`).
+Interface : `cd web && npm install && npm run build` (le résultat `web/dist` est commité).
 
 ## Structure
 
 ```
 src/jarvis/
-  telechargement.py      téléchargement vérifié (liste blanche, SHA-256)
-  chemins.py             emplacement des données hors du dépôt
-  diagnostic/            lot J0 : catalogue, mesures, décisions, rapport
-    donnees/             batterie d'appel d'outils, phrases de test
-tests/                   tests automatisés (pytest)
-diagnostic.cmd / .ps1    lanceur Windows du diagnostic
+  application.py        assemblage et démarrage
+  agent/                orchestrateur, consignes, routage, chemin rapide, tâches de fond
+  llm/                  serveur llama.cpp et client (diffusion, outils, réflexion)
+  voix/                 boucle vocale, moteurs (réveil, VAD, Parakeet, Piper), audio
+  outils/               un module par domaine (système, fichiers, web, communication…)
+  memoire/              faits, recherche, historique, souvenirs automatiques, sauvegarde
+  securite/             garde réseau, coffre, journal, permissions
+  serveur/              API FastAPI + WebSocket, appareils appairés
+  jeu.py, initiative.py mode jeu ; briefing et suggestions
+  banc.py               banc de performance et batterie de commandes
+  diagnostic/           lot J0
+web/                    interface PWA (React + TypeScript)
+tests/                  tests automatisés
 ```

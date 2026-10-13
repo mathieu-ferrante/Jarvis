@@ -59,6 +59,7 @@ def main(argv: list[str] | None = None) -> int:
         import os
 
         os.environ["JARVIS_DONNEES"] = str(opts.donnees)
+        chemins.memoriser_emplacement(opts.donnees)  # Jarvis retrouvera ce dossier au lancement
     etapes = {e.strip() for e in opts.etapes.split(",") if e.strip()}
     if opts.sans_micro:
         etapes.discard("micro")
