@@ -89,12 +89,21 @@ class ConfigJeu:
 class ConfigIntegrations:
     postgame_url: str = "http://127.0.0.1:8000"
     home_assistant_url: str = ""  # ex. http://homeassistant.local:8123
-    imap_hote: str = ""
+    # Mail (mot de passe d'application dans le coffre : imap_mot_de_passe)
+    imap_hote: str = ""  # ex. imap.gmail.com
     imap_utilisateur: str = ""
-    smtp_hote: str = ""
+    smtp_hote: str = ""  # ex. smtp.gmail.com (port 465 SSL ou 587 STARTTLS)
+    smtp_port: int = 465
+    expediteurs_importants: list[str] = field(default_factory=list)  # pour le briefing
+    # Agenda : CalDAV (lecture + création ; mot de passe : caldav_mot_de_passe) ou adresse iCal privée (lecture)
     caldav_url: str = ""
-    discord_salons: list[str] = field(default_factory=list)  # identifiants de salons à lire
+    caldav_utilisateur: str = ""
+    ics_url: str = ""  # ex. adresse secrète au format iCal de Google Agenda
+    # Discord (jeton du bot dans le coffre : discord_jeton_bot)
+    discord_salons: dict = field(default_factory=dict)  # {"general": "123…"} salons lisibles
+    discord_contacts: dict = field(default_factory=dict)  # {"théo": "456…"} identifiants pour les MP
     depots: list[str] = field(default_factory=list)  # projets perso (OUT-DEV)
+    home_assistant_entites: list[str] = field(default_factory=list)  # restreindre (vide = toutes)
 
 
 @dataclass

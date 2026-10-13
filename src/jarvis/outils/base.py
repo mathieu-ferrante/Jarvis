@@ -53,10 +53,11 @@ class Contexte:
     origine: str = "texte"
     outil: Outil | None = None
 
-    async def http(self, methode: str, url: str, **kwargs) -> httpx.Response:
-        """Requête HTTP limitée aux hôtes déclarés par l'outil (SEC-04)."""
+    async def http(self, methode: str, url: str, hotes: tuple[str, ...] | None = None, **kwargs) -> httpx.Response:
+        """Requête HTTP limitée aux hôtes déclarés par l'outil (SEC-04). `hotes` restreint davantage
+        (ex. l'agenda déclare « * » mais n'autorise, à l'exécution, que l'hôte configuré)."""
         outil = self.outil
-        hotes = outil.hotes if outil else ()
+        hotes = hotes if hotes is not None else (outil.hotes if outil else ())
         hote = (urlparse(url).hostname or "").lower()
         if not _correspond(hote, hotes) and hote not in ("127.0.0.1", "localhost"):
             raise PermissionError(f"L'outil {outil.nom if outil else '?'} n'a pas déclaré l'hôte {hote}")
