@@ -64,7 +64,7 @@ class Contexte:
         def envoyer() -> httpx.Response:
             with GARDE.pour_outil(outil.nom if outil else "?", hotes), \
                     httpx.Client(timeout=kwargs.pop("timeout", 20), follow_redirects=True,
-                                 headers={"User-Agent": "Mozilla/5.0 (Jarvis, assistant personnel)"}) as client:
+                                 headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36 Edg/141.0.0.0"}) as client:
                 return client.request(methode, url, **kwargs)
 
         return await asyncio.to_thread(envoyer)

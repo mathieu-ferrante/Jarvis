@@ -74,7 +74,7 @@ class Jarvis:
             log.warning("Outils non chargés : %s", erreur)
         self.confirmateur = permissions.ConfirmateurFile(self._publier_confirmation, delai_s=90)
         self.services: dict = {"rappels": self.rappels, "bus": self.bus, "appareils": self.appareils,
-                               "application": self}
+                               "application": self, "llm": self.llm}
         self.etat_jeu = {"en_jeu": False, "jeu": None}
         self.orchestrateur = Orchestrateur(
             self.llm, self.registre, self.journal, self.confirmateur, self.bus, llm_rapide=self.llm_rapide,

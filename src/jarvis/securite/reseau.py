@@ -41,8 +41,26 @@ def _est_local(hote: str) -> bool:
     return ip.is_loopback or ip in ipaddress.ip_network("100.64.0.0/10")  # Tailscale (CGNAT)
 
 
+# Fournisseurs d'IA : jamais joignables, même par un outil qui déclare « * » (règle absolue)
+FOURNISSEURS_IA = (
+    "openai.com", "chatgpt.com", "anthropic.com", "claude.ai", "generativelanguage.googleapis.com",
+    "aiplatform.googleapis.com", "gemini.google.com", "bard.google.com", "mistral.ai", "cohere.ai", "cohere.com",
+    "groq.com", "together.xyz", "together.ai", "perplexity.ai", "deepseek.com", "x.ai", "openrouter.ai",
+    "replicate.com", "fireworks.ai", "api-inference.huggingface.co", "inference.huggingface.co", "ai21.com",
+    "openai.azure.com", "cognitiveservices.azure.com", "bedrock-runtime.amazonaws.com", "copilot.microsoft.com", "deepgram.com",
+    "assemblyai.com", "elevenlabs.io", "picovoice.ai",
+)
+
+
+def est_fournisseur_ia(hote: str) -> bool:
+    hote = hote.lower().rstrip(".")
+    return any(hote == m or hote.endswith("." + m) for m in FOURNISSEURS_IA)
+
+
 def _correspond(hote: str, motifs: tuple[str, ...]) -> bool:
     hote = hote.lower().rstrip(".")
+    if est_fournisseur_ia(hote):
+        return False
     return any(hote == m or hote.endswith("." + m) or m == "*" for m in motifs)
 
 
