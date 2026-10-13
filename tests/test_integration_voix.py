@@ -43,7 +43,10 @@ def _phrase(tts, texte: str) -> np.ndarray:
 def test_transcription_parakeet(moteurs_reels):
     son = _phrase(moteurs_reels["tts"], "Rappelle-moi demain matin d'appeler le garage.")
     texte = moteurs_reels["stt"].transcrire(son).lower()
-    assert "garage" in texte and "demain" in texte
+    from jarvis.diagnostic.stt import wer
+
+    # Une voix de synthèse varie d'un rendu à l'autre : on tolère un mot manqué, pas davantage
+    assert "garage" in texte and wer("Rappelle-moi demain matin d'appeler le garage.", texte) <= 0.25, texte
 
 
 def test_reveil_avec_voix_anglaise(moteurs_reels):

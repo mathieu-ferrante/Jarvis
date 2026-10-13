@@ -27,6 +27,8 @@ voix = [
     "soundfile>=0.13",
     "scipy>=1.14",
     "jiwer>=3.1",
+    "sherpa-onnx>=1.12",  # empreinte vocale (VOX-11)
+    "onnx>=1.17",  # export du mot de réveil personnalisé (VOX-10)
 ]
 # Application complète : interface web, présence sur le bureau, outils.
 app = [

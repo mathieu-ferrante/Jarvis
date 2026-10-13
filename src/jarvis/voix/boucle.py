@@ -28,6 +28,7 @@ from jarvis.voix.phrases import DecoupeurPhrases
 
 log = logging.getLogger(__name__)
 DUREE_TRAME_MS = 1000 * TRAME / TAUX
+REFUS_LOCUTEUR = "__refus_locuteur__"
 
 
 class Cerveau(Protocol):
@@ -82,6 +83,8 @@ class BoucleVocale:
     parametres: ParametresBoucle = field(default_factory=ParametresBoucle)
     sur_evenement: Callable[[str, dict], None] | None = None
     silencieux: Callable[[], bool] = lambda: False  # VOX-07 : en jeu, pas d'annonce spontanée
+    verificateur: object | None = None  # VOX-11 : vérifie la voix des confirmations
+    aec: object | None = None  # VOX-13 : annulation d'écho (référence fournie par la sortie)
 
     def __post_init__(self):
         self.etat = "veille"
@@ -156,7 +159,16 @@ class BoucleVocale:
         finally:
             annonces.cancel()
 
+    def _annuler_echo(self, trame: np.ndarray) -> np.ndarray:
+        reference = self.sortie.reference.prendre(len(trame))
+        if not np.any(reference):
+            return trame
+        propre = self.aec.traiter(trame.astype(np.float32) / 32768, reference)
+        return (np.clip(propre, -1, 1) * 32767).astype(np.int16)
+
     def _traiter_trame(self, trame: np.ndarray) -> None:
+        if self.aec is not None and getattr(self.sortie, "reference", None) is not None:
+            trame = self._annuler_echo(trame)
         p = self.parametres
         if self.etat == "veille":
             if self.reveil.traiter(trame):
@@ -258,11 +270,22 @@ class BoucleVocale:
             self._confirmation = None
             if self.etat == "confirmation":
                 self._changer_etat("reflexion")
+        if texte == REFUS_LOCUTEUR:
+            self._emettre("locuteur_refuse")
+            return False  # VOX-11 : une autre voix ne confirme pas une action sensible
         self._emettre("confirmation", texte=texte)
         return interpreter_reponse(texte) if texte else None
 
     async def _transcrire_confirmation(self, son: np.ndarray) -> None:
-        texte = await asyncio.to_thread(self.stt.transcrire, son.astype(np.float32) / 32768)
+        son32 = son.astype(np.float32) / 32768
+        if self.verificateur is not None:
+            est_mathieu, score = await asyncio.to_thread(self.verificateur.verifier, son32)
+            if not est_mathieu:
+                log.warning("Confirmation refusée : voix non reconnue (score %.2f)", score)
+                if self._confirmation and not self._confirmation.done():
+                    self._confirmation.set_result(REFUS_LOCUTEUR)
+                return
+        texte = await asyncio.to_thread(self.stt.transcrire, son32)
         if self._confirmation and not self._confirmation.done():
             self._confirmation.set_result(retirer_mot_reveil(texte))
 

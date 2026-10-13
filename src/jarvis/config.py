@@ -45,7 +45,8 @@ class ConfigVoix:
     anticipation_ms: int = 200  # transcription anticipée dès 200 ms de silence (J11)
     duree_max_phrase_s: float = 15.0
     ecoute_continue_s: float = 6.0  # VOX-05
-    interruption: str = "reveil"  # "reveil" (dire « Jarvis ») ou "vad" (toute parole, casque requis)
+    interruption: str = "reveil"  # "reveil" (dire « Jarvis ») ou "vad" (toute parole)
+    annulation_echo: bool = True  # VOX-13 : retire du micro la voix de Jarvis (interruption sans casque)
     raccourci_parler: str = "ctrl+alt+j"
     raccourci_arret: str = "ctrl+alt+k"  # SEC-07
     micro: str = ""  # nom (ou index) du périphérique d'entrée ; vide = défaut

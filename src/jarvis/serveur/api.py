@@ -261,7 +261,12 @@ def creer_app(jarvis) -> FastAPI:
         """Modèles openWakeWord pour le mot de réveil du téléphone (TEL-02) : servis par le PC, pas par Internet."""
         from jarvis import modeles
         from jarvis.diagnostic.catalogue import OPENWAKEWORD
+        from jarvis.voix.entrainement_reveil import chemin_modele_perso
 
+        if nom == "jarvis_perso.onnx":  # modèle « Jarvis » entraîné sur la voix de Mathieu (VOX-10)
+            if not chemin_modele_perso().exists():
+                raise HTTPException(404)
+            return FileResponse(chemin_modele_perso())
         par_nom = {f.nom: f for f in OPENWAKEWORD.values()}
         if nom not in par_nom or not modeles.chemin(par_nom[nom]).exists():
             raise HTTPException(404)

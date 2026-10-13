@@ -129,12 +129,18 @@ class SortieAudio:
         self.peripherique = int(peripherique) if str(peripherique or "").isdigit() else (peripherique or None)
         self._coupe = threading.Event()
         self.en_cours = False
+        self.reference = None  # FileReference : ce qui est joué, pour l'annulation d'écho (VOX-13)
+
+    def _memoriser(self, son: np.ndarray, taux: int) -> None:
+        if self.reference is not None:
+            self.reference.ajouter(outils_audio.reechantillonner(son, taux, TAUX))
 
     async def jouer(self, son: np.ndarray, taux: int) -> bool:
         """Joue `son`. Renvoie False si la lecture a été coupée."""
         import sounddevice as sd
 
         self._coupe.clear()
+        self._memoriser(son, taux)
         self.en_cours = True
         son = outils_audio.en_float32(son)
         position = 0
@@ -162,6 +168,8 @@ class SortieAudio:
 
     def couper(self) -> None:
         self._coupe.set()
+        if self.reference is not None:
+            self.reference.vider()
 
 
 class SortieSimulee(SortieAudio):
@@ -177,6 +185,7 @@ class SortieSimulee(SortieAudio):
         self._coupe.clear()
         self.en_cours = True
         self.joue.append((son, taux))
+        self._memoriser(son, taux)
         duree = len(son) / taux * self.vitesse
         pas = 0.02
         ecoule = 0.0

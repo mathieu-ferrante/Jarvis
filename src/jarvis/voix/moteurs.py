@@ -71,8 +71,13 @@ class DetecteurReveil:
     def __init__(self, seuil: float = 0.5, seuil_bas: float = 0.15, transcripteur=None):
         from openwakeword.model import Model
 
+        from jarvis.voix.entrainement_reveil import chemin_modele_perso
+
+        # Modèle « Jarvis » personnalisé (VOX-10) s'il a été entraîné : ses détections passent
+        # TOUJOURS par la vérification par transcription (second étage), sans exception.
+        self.perso = chemin_modele_perso() if chemin_modele_perso().exists() else None
         self.modele = Model(
-            wakeword_models=[str(modeles.chemin(OPENWAKEWORD["hey_jarvis"]))],
+            wakeword_models=[str(modeles.chemin(OPENWAKEWORD["hey_jarvis"]))] + ([str(self.perso)] if self.perso else []),
             melspec_model_path=str(modeles.chemin(OPENWAKEWORD["melspectrogram"])),
             embedding_model_path=str(modeles.chemin(OPENWAKEWORD["embedding"])),
             inference_framework="onnx",
@@ -89,10 +94,14 @@ class DetecteurReveil:
     def traiter(self, trame: np.ndarray) -> bool:
         self._historique.append(trame)
         del self._historique[:-20]  # 1,6 s
-        score = max(self.modele.predict(trame).values())
-        if score >= self.seuil:
+        scores = self.modele.predict(trame)
+        score_hey = scores.get("hey_jarvis_v0.1", 0.0)
+        score_perso = scores.get("jarvis_perso", 0.0)
+        if score_hey >= self.seuil:
             return True
-        if score >= self.seuil_bas and self.transcripteur and time.monotonic() - self._derniere_verif > 0.8:
+        candidat = score_hey >= self.seuil_bas or score_perso >= 0.5
+        score = max(score_hey, score_perso)
+        if candidat and self.transcripteur and time.monotonic() - self._derniere_verif > 0.8:
             self._derniere_verif = time.monotonic()
             texte = self.transcripteur.transcrire(outils_audio.en_float32(np.concatenate(self._historique)))
             if contient_jarvis(texte):

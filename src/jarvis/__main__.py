@@ -180,6 +180,70 @@ def cmd_diagnostic(args) -> int:
     return diagnostic(args.reste)
 
 
+def cmd_enroler_voix(args) -> int:
+    """Enregistre Mathieu (mot de réveil + phrases), calibre l'empreinte vocale (VOX-10, VOX-11)."""
+
+    from jarvis import chemins
+    from jarvis.diagnostic import audio
+    from jarvis.diagnostic.micro import enregistrer
+    from jarvis.securite.secrets import Coffre
+    from jarvis.voix import locuteur
+    from jarvis.voix.moteurs import Synthese
+
+    dossier = chemins.dossier_donnees() / "voix_mathieu"
+    (dossier / "reveil").mkdir(parents=True, exist_ok=True)
+    (dossier / "ambiance").mkdir(parents=True, exist_ok=True)
+    print("Enrôlement de ta voix : tout reste sur ce PC. Parle à ta distance habituelle du micro.")
+    for i in range(args.nombre):
+        input(f"  {i + 1}/{args.nombre} — Entrée, puis dis « Jarvis » (varie le ton : normal, appel, question…) ")
+        audio.ecrire_wav(dossier / "reveil" / f"jarvis_{i:02d}.wav", enregistrer(2.0), 16000)
+    phrases = ["Jarvis, quelle heure est-il ?", "Mets un peu de musique s'il te plaît.", "Oui, vas-y, envoie-le.",
+               "Non, annule.", "Rappelle-moi demain matin d'appeler le garage.", "Qu'est-ce que tu sais sur moi ?"]
+    sons = []
+    for phrase in phrases:
+        input(f"  Entrée, puis lis : « {phrase} » ")
+        son = enregistrer(4.0)
+        sons.append(son)
+        audio.ecrire_wav(dossier / f"phrase_{len(sons)}.wav", son, 16000)
+    if args.ambiance:
+        input(f"  Lance une partie (ou ton ambiance habituelle), puis Entrée : {args.ambiance} s d'enregistrement ")
+        audio.ecrire_wav(dossier / "ambiance" / "ambiance.wav", enregistrer(float(args.ambiance)), 16000)
+    print("Calibrage de l'empreinte vocale…")
+    ex = locuteur.Extracteur()
+    siennes = [ex.empreinte(s) for s in sons]
+    autres = []
+    synth = Synthese("piper-siwis", prechauffer=False)
+    for phrase in phrases:
+        son, taux = synth.synthetiser(phrase)
+        autres.append(ex.empreinte(audio.reechantillonner(son, taux)))
+    calibration = locuteur.calibrer(siennes, autres)
+    locuteur.VerificateurLocuteur(Coffre()).enregistrer(calibration)
+    print(f"Empreinte enregistrée (chiffrée). Seuil {calibration['seuil']}, similarité minimale de ta voix "
+          f"{calibration['min_mathieu']}. Lance maintenant : python -m jarvis entrainer-reveil")
+    return 0
+
+
+def cmd_entrainer_reveil(args) -> int:
+    from pathlib import Path
+
+    from jarvis import chemins
+    from jarvis.voix import entrainement_reveil as er
+
+    dossier = chemins.dossier_donnees() / "voix_mathieu"
+    enregistrements = Path(args.enregistrements) if args.enregistrements else dossier / "reveil"
+    ambiance = Path(args.ambiance) if args.ambiance else dossier / "ambiance"
+    print("Fabrication du corpus (voix de synthèse + tes enregistrements), quelques minutes…")
+    corpus = er.construire_corpus(enregistrements, ambiance, repetitions=args.repetitions)
+    print(f"  {len(corpus.positifs)} exemples positifs, {len(corpus.negatifs)} négatifs. Entraînement…")
+    m = er.entrainer(corpus)
+    print(f"Modèle : {m['fichier']}")
+    print(f"  détection {m['detection']:.0%} (exemples de test), seuil {m['seuil']}, "
+          f"faux par fenêtre {m['faux_par_fenetre']:.2%}")
+    print("Chaque détection est confirmée par la transcription : un faux déclenchement ne réveille pas Jarvis.")
+    print("Redémarre Jarvis pour l'utiliser (le téléphone le récupère aussi au prochain démarrage du réveil).")
+    return 0
+
+
 def cmd_banc(args) -> int:
     from jarvis.banc import main as banc
 
@@ -219,6 +283,13 @@ def main(argv: list[str] | None = None) -> int:
     sv.add_argument("--restaurer")
     sv.add_argument("--vers")
     sous.add_parser("outils")
+    ev = sous.add_parser("enroler-voix")
+    ev.add_argument("--nombre", type=int, default=15, help="nombre de « Jarvis » à enregistrer")
+    ev.add_argument("--ambiance", type=int, default=0, help="secondes d'ambiance de jeu à enregistrer (ex. 120)")
+    er_ = sous.add_parser("entrainer-reveil")
+    er_.add_argument("--enregistrements")
+    er_.add_argument("--ambiance")
+    er_.add_argument("--repetitions", type=int, default=4)
     for nom in ("diagnostic", "banc"):
         x = sous.add_parser(nom, add_help=False)
         x.add_argument("reste", nargs=argparse.REMAINDER)
@@ -230,7 +301,8 @@ def main(argv: list[str] | None = None) -> int:
         configurer_journaux(args.verbeux)
     return {"demarrer": cmd_demarrer, "installer": cmd_installer, "appairer": cmd_appairer,
             "appareils": cmd_appareils, "secrets": cmd_secrets, "sauvegarde": cmd_sauvegarde, "outils": cmd_outils,
-            "diagnostic": cmd_diagnostic, "banc": cmd_banc}[commande](args)
+            "diagnostic": cmd_diagnostic, "banc": cmd_banc, "enroler-voix": cmd_enroler_voix,
+            "entrainer-reveil": cmd_entrainer_reveil}[commande](args)
 
 
 if __name__ == "__main__":

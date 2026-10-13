@@ -69,6 +69,7 @@ def fichiers_necessaires(config) -> list[Fichier]:
         fichiers.append(modele_llm(config.llm.brouillon).gguf)
     fichiers += PARAKEET_ONNX
     fichiers.append(EMBEDDINGS)
+    fichiers.append(LOCUTEUR)
     fichiers += list(voix(config.voix.tts).fichiers)
     fichiers += list(cat.OPENWAKEWORD.values())
     uniques: dict[str, Fichier] = {}
@@ -95,3 +96,8 @@ def installer(config, verifier: bool = False) -> list[str]:
         except Exception as e:  # noqa: BLE001 — on continue et on rapporte
             erreurs.append(f"{f.nom} : {e}")
     return erreurs
+
+# Empreinte vocale (VOX-11) : WeSpeaker ResNet34 (VoxCeleb, multilingue), via sherpa-onnx.
+LOCUTEUR = Fichier("https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/"
+                   "wespeaker_en_voxceleb_resnet34_LM.onnx", "locuteur/wespeaker_en_voxceleb_resnet34_LM.onnx",
+                   26530550, "e9848563da86f263117134dfd7ad63c92355b37de492b55e325400c9d9c39012")

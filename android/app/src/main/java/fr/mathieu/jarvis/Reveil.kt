@@ -71,7 +71,8 @@ class Reveil(
         }
         melspec = charger("melspectrogram.onnx")
         embedding = charger("embedding_model.onnx")
-        modele = charger("hey_jarvis_v0.1.onnx")
+        // Modèle « Jarvis » personnalisé (VOX-10) s'il a été entraîné sur le PC, sinon « hey jarvis »
+        modele = runCatching { charger("jarvis_perso.onnx") }.getOrElse { charger("hey_jarvis_v0.1.onnx") }
         true
     }.getOrDefault(false)
 

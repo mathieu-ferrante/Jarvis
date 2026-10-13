@@ -166,6 +166,17 @@ class Jarvis:
                                         ecoute_continue_s=v.ecoute_continue_s, interruption=v.interruption,
                                         anticipation_ms=v.anticipation_ms),
             sur_evenement=self._evenement_voix, silencieux=lambda: self.etat_jeu["en_jeu"])
+        if v.annulation_echo:
+            from jarvis.voix.aec import AnnuleurEcho, FileReference
+
+            self.boucle.sortie.reference = FileReference()
+            self.boucle.aec = AnnuleurEcho()
+        if self.coffre is not None:
+            from jarvis.voix.locuteur import VerificateurLocuteur
+
+            verificateur = VerificateurLocuteur(self.coffre)
+            if verificateur.actif:  # seulement après l'enrôlement de la voix de Mathieu
+                self.boucle.verificateur = verificateur
 
     def _evenement_voix(self, type_: str, donnees: dict) -> None:
         self.bus.publier(f"voix_{type_}", **donnees)
