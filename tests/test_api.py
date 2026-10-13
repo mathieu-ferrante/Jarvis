@@ -122,3 +122,20 @@ def test_entetes_de_securite(jarvis):
     client = TestClient(creer_app(jarvis))
     r = client.get("/api/journal", headers=entete(jarvis.appareils.jeton_local))
     assert r.headers["X-Frame-Options"] == "DENY"
+
+
+def test_modeles_et_verification_du_reveil_telephone(jarvis):
+    import numpy as np
+
+    class Faux:
+        def transcrire(self, son):
+            assert son.dtype == np.float32 and len(son) == 1600
+            return "Djarvis, tu es là ?"
+
+    jarvis.boucle = type("B", (), {"stt": Faux(), "tts": None})()
+    client = TestClient(creer_app(jarvis))
+    h = entete(jarvis.appareils.jeton_local)
+    r = client.post("/api/reveil/verifier", content=np.zeros(1600, dtype="<i2").tobytes(), headers=h)
+    assert r.json()["jarvis"] is True
+    assert client.get("/api/modeles/reveil/inconnu.onnx", headers=h).status_code == 404
+    assert client.get("/api/modeles/reveil/hey_jarvis_v0.1.onnx").status_code == 401

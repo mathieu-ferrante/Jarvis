@@ -1,0 +1,11 @@
+.gradle/
+build/
+local.properties
+.idea/
+*.iml
+captures/
+.cxx/
+# SEC-15 : la clé de signature et ses mots de passe restent hors du dépôt
+keystore.properties
+*.jks
+*.keystore

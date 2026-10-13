@@ -242,6 +242,29 @@ def creer_app(jarvis) -> FastAPI:
         return {"notifications": [{"type": e.type, "donnees": e.donnees, "horodatage": e.horodatage}
                                   for e in jarvis.bus.historique if e.type == "notification"][-50:]}
 
+    @app.get("/api/modeles/reveil/{nom}")
+    async def modele_reveil(nom: str, a: dict = Depends(appareil)):
+        """Modèles openWakeWord pour le mot de réveil du téléphone (TEL-02) : servis par le PC, pas par Internet."""
+        from jarvis import modeles
+        from jarvis.diagnostic.catalogue import OPENWAKEWORD
+
+        par_nom = {f.nom: f for f in OPENWAKEWORD.values()}
+        if nom not in par_nom or not modeles.chemin(par_nom[nom]).exists():
+            raise HTTPException(404)
+        return FileResponse(modeles.chemin(par_nom[nom]))
+
+    @app.post("/api/reveil/verifier")
+    async def verifier_reveil(request: Request, a: dict = Depends(appareil)):
+        """Second étage du mot de réveil du téléphone : « Jarvis » est-il dans ces 1,6 s (PCM 16 kHz) ?"""
+        from jarvis.voix.moteurs import contient_jarvis
+
+        brut = await request.body()
+        if len(brut) > 16000 * 2 * 3:
+            raise HTTPException(413)
+        son = np.frombuffer(brut, dtype="<i2").astype(np.float32) / 32768
+        texte = await asyncio.to_thread(_moteurs()["stt"].transcrire, son)
+        return {"jarvis": contient_jarvis(texte), "texte": texte}
+
     @app.get("/api/fichiers/{jeton}")
     async def fichier_partage(jeton: str, a: dict = Depends(appareil)):
         """Fichier envoyé par Jarvis vers cet appareil (lien à usage unique, 10 minutes)."""
