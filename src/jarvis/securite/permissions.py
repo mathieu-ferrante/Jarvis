@@ -22,6 +22,17 @@ class Demande:
     arguments: dict
     niveau: Niveau
     suite_contenu_externe: bool = False
+    origine: str = ""  # ex. « voix », « texte:ab12cd34 » (appareil) — SEC-12
+
+    @property
+    def appareil(self) -> str:
+        """Identifiant de l'appareil d'origine (« pc » pour la voix au PC ou une origine interne)."""
+        _, _, ident = self.origine.partition(":")
+        return ident or "pc"
+
+    def peut_confirmer(self, appareil: str) -> bool:
+        """Seuls l'appareil d'où vient la demande et le PC peuvent la confirmer."""
+        return appareil in ("pc", self.appareil)
 
     def question(self) -> str:
         source = " Cette action fait suite à un contenu lu, pas à ta demande directe." \
@@ -77,6 +88,7 @@ class ConfirmateurFile:
         self.publier = publier  # callable(id, Demande)
         self.delai_s = delai_s
         self._attentes: dict[int, asyncio.Future] = {}
+        self.demandes: dict[int, Demande] = {}
         self._compteur = 0
 
     async def demander(self, demande: Demande) -> bool:
@@ -84,6 +96,7 @@ class ConfirmateurFile:
         ident = self._compteur
         futur = asyncio.get_running_loop().create_future()
         self._attentes[ident] = futur
+        self.demandes[ident] = demande
         await _appeler(self.publier, ident, demande)
         try:
             return bool(await asyncio.wait_for(futur, self.delai_s))
@@ -91,6 +104,7 @@ class ConfirmateurFile:
             return False
         finally:
             self._attentes.pop(ident, None)
+            self.demandes.pop(ident, None)
 
     def repondre(self, ident: int, oui: bool) -> bool:
         futur = self._attentes.get(ident)

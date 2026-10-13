@@ -296,7 +296,7 @@ class Orchestrateur:
                       conversation=tour.conversation, suite_contenu_externe=tour.contenu_externe)
 
         if choix == "confirmer":
-            demande = permissions.Demande(outil.nom, description, args, outil.niveau, tour.contenu_externe)
+            demande = permissions.Demande(outil.nom, description, args, outil.niveau, tour.contenu_externe, tour.origine)
             self.bus.publier("confirmation_demandee", question=demande.question(), outil=outil.nom)
             accord = await self.confirmateur.demander(demande)
             if not accord:

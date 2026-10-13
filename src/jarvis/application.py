@@ -81,6 +81,9 @@ class Jarvis:
             config=self.config, memoire=self.memoire, coffre=self.coffre, services=self.services,
             en_jeu=lambda: self.etat_jeu["en_jeu"])
         self.services["taches"] = GestionnaireTaches(self.orchestrateur)
+        from jarvis.serveur.multi import GestionnaireMulti
+
+        self.multi = GestionnaireMulti(self)
         self.boucle = None
         self._taches: list[asyncio.Task] = []
         self.bus.abonner(self._sur_evenement)
@@ -90,7 +93,7 @@ class Jarvis:
     async def _publier_confirmation(self, ident: int, demande: permissions.Demande) -> None:
         self.bus.publier("confirmation", id=ident, question=demande.question(), outil=demande.outil,
                          arguments=demande.arguments, niveau=demande.niveau.nom_fr,
-                         suite_contenu_externe=demande.suite_contenu_externe)
+                         suite_contenu_externe=demande.suite_contenu_externe, appareil=demande.appareil)
         if self.boucle is not None and self.boucle.etat in ("reflexion", "parole"):
             asyncio.create_task(self._confirmer_a_la_voix(ident, demande.question()))
 

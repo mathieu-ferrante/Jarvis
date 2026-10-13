@@ -68,6 +68,10 @@ def creer_app(jarvis) -> FastAPI:
     async def diffuser(evt) -> None:
         if evt.type not in TYPES_PUBLIES:
             return
+        if evt.type == "notification" and getattr(jarvis, "multi", None) is not None:
+            # MULTI-05 : appareil actif d'abord, les autres seulement si elle n'est pas lue
+            await jarvis.multi.notifier({"type": evt.type, "donnees": evt.donnees, "horodatage": evt.horodatage})
+            return
         message = json.dumps({"type": evt.type, "donnees": evt.donnees, "horodatage": evt.horodatage},
                              ensure_ascii=False, default=str)
         for ws in list(clients):
@@ -160,6 +164,9 @@ def creer_app(jarvis) -> FastAPI:
     @app.post("/api/confirmation/{ident}")
     async def confirmer(ident: int, corps: dict, a: dict = Depends(appareil)):
         oui = bool(corps.get("oui"))
+        demande = jarvis.confirmateur.demandes.get(ident)
+        if demande is not None and not demande.peut_confirmer(a["id"]):
+            raise HTTPException(403, "Seul l'appareil à l'origine de la demande (ou le PC) peut la confirmer (SEC-12)")
         if oui and a.get("type") == "android" and not corps.get("biometrie"):
             raise HTTPException(403, "Action irréversible depuis le téléphone : empreinte requise (SEC-12)")
         if not jarvis.confirmateur.repondre(ident, oui):
@@ -235,6 +242,14 @@ def creer_app(jarvis) -> FastAPI:
         return {"notifications": [{"type": e.type, "donnees": e.donnees, "horodatage": e.horodatage}
                                   for e in jarvis.bus.historique if e.type == "notification"][-50:]}
 
+    @app.get("/api/fichiers/{jeton}")
+    async def fichier_partage(jeton: str, a: dict = Depends(appareil)):
+        """Fichier envoyé par Jarvis vers cet appareil (lien à usage unique, 10 minutes)."""
+        chemin = jarvis.multi.fichier_pour_lien(jeton) if getattr(jarvis, "multi", None) else None
+        if chemin is None:
+            raise HTTPException(404, "Lien expiré ou déjà utilisé")
+        return FileResponse(chemin, filename=chemin.name)
+
     # --- Spotify (compte branché par Mathieu) -----------------------------------------------
 
     @app.post("/api/connecter/spotify")
@@ -276,6 +291,7 @@ def creer_app(jarvis) -> FastAPI:
             return
         websocket.state.appareil = a["id"]
         clients.add(websocket)
+        connexion = await jarvis.multi.ouvrir(a, websocket) if getattr(jarvis, "multi", None) else None
         await websocket.send_text(json.dumps({"type": "bienvenue", "donnees": {"appareil": a, "pret": jarvis.metriques.pret}},
                                              ensure_ascii=False))
         try:
@@ -285,13 +301,25 @@ def creer_app(jarvis) -> FastAPI:
                 if msg.get("type") == "texte" and msg.get("texte"):
                     asyncio.create_task(_repondre_ws(websocket, msg["texte"], a, msg.get("conversation", "principale")))
                 elif msg.get("type") == "confirmer":
-                    jarvis.confirmateur.repondre(int(msg["id"]), bool(msg.get("oui")))
+                    demande = jarvis.confirmateur.demandes.get(int(msg["id"]))
+                    biometrie_requise = bool(msg.get("oui")) and a.get("type") == "android" and not msg.get("biometrie")
+                    if demande is not None and demande.peut_confirmer(a["id"]) and not biometrie_requise:
+                        jarvis.confirmateur.repondre(int(msg["id"]), bool(msg.get("oui")))
                 elif msg.get("type") == "arret":
                     jarvis.orchestrateur.arreter_tout()
+                elif connexion is not None and msg.get("type") == "outils":
+                    noms = jarvis.multi.enregistrer_outils(connexion, msg.get("outils") or [])
+                    await websocket.send_text(json.dumps({"type": "outils_enregistres", "donnees": {"noms": noms}}))
+                elif connexion is not None and msg.get("type") == "resultat":
+                    jarvis.multi.resultat_distant(msg.get("donnees") or {})
+                elif connexion is not None and msg.get("type") == "lu":
+                    jarvis.multi.marquer_lu(str(msg.get("id", "")))
         except WebSocketDisconnect:
             pass
         finally:
             clients.discard(websocket)
+            if connexion is not None:
+                jarvis.multi.fermer(connexion)
 
     async def _repondre_ws(websocket: WebSocket, texte: str, a: dict, conversation: str) -> None:
         debut = time.perf_counter()

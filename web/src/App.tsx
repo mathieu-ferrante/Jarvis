@@ -83,6 +83,10 @@ function Principal({ jeton, surDeconnexion }: { jeton: string; surDeconnexion: (
       case "notification":
         ajouter("systeme", `${e.donnees.titre} — ${e.donnees.texte}`);
         notifier(e.donnees.titre, e.donnees.texte);
+        if (document.visibilityState === "visible" && e.donnees.id_notification) connexion.current?.envoyer({ type: "lu", id: e.donnees.id_notification });
+        break;
+      case "recevoir":
+        recevoir(e.donnees, ajouter);
         break;
       case "voix_transcription":
         if (e.donnees.texte) ajouter("moi", `🎙 ${e.donnees.texte}`);
@@ -164,6 +168,38 @@ function Principal({ jeton, surDeconnexion }: { jeton: string; surDeconnexion: (
       ))}
     </div>
   );
+}
+
+function recevoir(d: any, ajouter: (de: Message["de"], texte: string) => void) {
+  if (d.nature === "lien") {
+    ajouter("systeme", `Lien reçu : ${d.contenu}`);
+    window.open(d.contenu, "_blank", "noopener");
+  } else if (d.nature === "texte") {
+    ajouter("systeme", `Reçu : ${d.contenu}`);
+    navigator.clipboard?.writeText(d.contenu).catch(() => undefined);
+  } else if (d.nature === "fichier") {
+    ajouter("systeme", `Fichier reçu : ${d.nom}`);
+    fetch(d.url, { headers: { Authorization: `Bearer ${lireJeton()}` } })
+      .then((r) => r.blob())
+      .then((b) => {
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(b);
+        a.download = d.nom;
+        a.click();
+      })
+      .catch(() => ajouter("systeme", "Téléchargement du fichier impossible."));
+  } else if (d.nature === "sonner") {
+    const ctx = new AudioContext();
+    for (let i = 0; i < 6; i++) {
+      const o = ctx.createOscillator();
+      o.frequency.value = i % 2 ? 880 : 660;
+      o.connect(ctx.destination);
+      o.start(ctx.currentTime + i * 0.4);
+      o.stop(ctx.currentTime + i * 0.4 + 0.3);
+    }
+    navigator.vibrate?.([300, 100, 300, 100, 300]);
+    ajouter("systeme", "Jarvis fait sonner cet appareil.");
+  }
 }
 
 function libelleEtat(e: string) {
