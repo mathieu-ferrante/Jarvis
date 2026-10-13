@@ -42,7 +42,13 @@ BUDGETS = {
 
 
 def charger_batterie() -> dict:
-    return json.loads(resources.files("jarvis").joinpath("donnees/batterie_commandes.json").read_text("utf-8"))
+    """Toutes les batteries `donnees/batterie_commandes*.json`, réunies (IA-01 : 200 cas)."""
+    dossier = resources.files("jarvis").joinpath("donnees")
+    fichiers = sorted(f for f in dossier.iterdir() if f.name.startswith("batterie_commandes") and f.name.endswith(".json"))
+    bat = json.loads(fichiers[0].read_text("utf-8"))
+    for f in fichiers[1:]:
+        bat["cas"] += json.loads(f.read_text("utf-8"))["cas"]
+    return bat
 
 
 # --- Batterie de commandes ------------------------------------------------------------------
@@ -294,9 +300,12 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--url", help="serveur de modèles déjà lancé (sinon : démarré avec la configuration)")
     p.add_argument("--sans-voix", action="store_true", help="ne pas mesurer PERF-01/02/07")
     p.add_argument("--sortie", type=Path, default=Path("banc-resultats"))
+    p.add_argument("--modele", help="évaluer un autre modèle du catalogue (IA-05), sans changer la configuration")
     args = p.parse_args(argv)
     tout = not args.commandes and not args.perf
     config = module_config.charger()
+    if args.modele:
+        config.llm.principal = config.llm.rapide = args.modele
     from jarvis.diagnostic.catalogue import LLAMA_CPP_VERSION
 
     rapport: dict = {"date": datetime.now().isoformat(timespec="minutes"), "modele": config.llm.principal,
@@ -350,6 +359,25 @@ def main(argv: list[str] | None = None) -> int:
     (dossier / "banc.md").write_text(markdown(rapport), "utf-8")
     print("\n" + markdown(rapport))
     print(f"Rapport : {(dossier / 'banc.md').resolve()}")
+    return 0
+
+
+def evaluer(candidat: str) -> int:
+    """IA-05 : compare un modèle candidat au modèle actuel ; à adopter seulement s'il fait mieux sur la
+    batterie de commandes ET sans dégrader les budgets de performance."""
+    actuel = module_config.charger().llm.principal
+    racine = Path("banc-resultats") / f"evaluation-{datetime.now():%Y%m%d-%H%M}"
+    for cle in (actuel, candidat):
+        main(["--modele", cle, "--sans-voix", "--sortie", str(racine / cle)])
+    resultats = {cle: json.loads(next((racine / cle).glob("*/banc.json")).read_text("utf-8")) for cle in (actuel, candidat)}
+    a, c = resultats[actuel], resultats[candidat]
+    print(f"\n| Mesure | {actuel} | {candidat} |\n|---|---|---|")
+    for cle in BUDGETS:
+        print(f"| {cle} | {a.get(cle, '—')} | {c.get(cle, '—')} |")
+    mieux_commandes = (c.get("NF-02_taux_commandes") or 0) > (a.get("NF-02_taux_commandes") or 0)
+    regressions = comparer(c, a)
+    verdict = "ADOPTER" if mieux_commandes and not regressions else "GARDER l'actuel"
+    print(f"\nVerdict : {verdict}" + (f" (régressions : {'; '.join(regressions)})" if regressions else ""))
     return 0
 
 

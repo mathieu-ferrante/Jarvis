@@ -88,6 +88,9 @@ function Principal({ jeton, surDeconnexion }: { jeton: string; surDeconnexion: (
       case "recevoir":
         recevoir(e.donnees, ajouter);
         break;
+      case "proposition_souvenir":
+        ajouter("systeme", `Jarvis propose de retenir : « ${e.donnees.texte} » (onglet Mémoire pour accepter)`);
+        break;
       case "voix_transcription":
         if (e.donnees.texte) ajouter("moi", `🎙 ${e.donnees.texte}`);
         break;
@@ -313,6 +316,12 @@ function Journal() {
 function Memoire() {
   const [q, setQ] = useState("");
   const [d, recharger] = useDonnees<{ faits: any[]; statistiques: Record<string, number> }>(`/api/memoire?q=${encodeURIComponent(q)}`);
+  const [props, rechargerProps] = useDonnees<{ propositions: any[] }>("/api/propositions");
+  const decider = async (id: number, accepter: boolean) => {
+    await api(`/api/propositions/${id}`, { method: "POST", body: JSON.stringify({ accepter }) });
+    rechargerProps();
+    recharger();
+  };
   const oublier = async (id: number) => {
     if (!confirm("Oublier définitivement ce souvenir ?")) return;
     await api(`/api/memoire/${id}`, { method: "DELETE" });
@@ -328,6 +337,21 @@ function Memoire() {
   return (
     <section>
       <div className="entete-section"><h2>Ce que Jarvis sait</h2>{d && <small>{d.statistiques.faits} souvenirs · {d.statistiques.echanges} échanges · {d.statistiques.documents} passages indexés</small>}</div>
+      {props && props.propositions.length > 0 && (
+        <>
+          <h3>À valider ({props.propositions.length})</h3>
+          <ul className="liste">
+            {props.propositions.map((p) => (
+              <li key={p.id}>
+                <div>{p.texte}</div>
+                <small>{p.origine === "habitude" ? "habitude repérée" : "déduit d'une conversation"} · {p.cree?.slice(0, 10)}</small>
+                <div className="actions"><button className="oui" onClick={() => decider(p.id, true)}>Retenir</button><button className="non" onClick={() => decider(p.id, false)}>Ignorer</button></div>
+              </li>
+            ))}
+          </ul>
+          <h3>Souvenirs</h3>
+        </>
+      )}
       <input className="recherche" placeholder="Chercher un sujet…" value={q} onChange={(e) => setQ(e.target.value)} />
       <ul className="liste">
         {d?.faits.map((f) => (

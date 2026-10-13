@@ -32,6 +32,7 @@ class ConfigLLM:
     cache_kv: str = "q8_0"
     reflexion: str = "auto"  # auto (demandes complexes), toujours, jamais
     souvenirs_automatiques: bool = True  # extraire les faits durables des conversations
+    souvenirs_a_valider: bool = True  # IA-04 : les proposer à Mathieu avant de les retenir
 
 
 @dataclass

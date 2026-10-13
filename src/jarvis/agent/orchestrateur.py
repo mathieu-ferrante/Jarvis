@@ -105,6 +105,7 @@ class Orchestrateur:
         self._taches_outils: set[asyncio.Task] = set()
         self._taches_fond: set[asyncio.Task] = set()  # souvenirs automatiques (références gardées)
         self.max_etapes = getattr(getattr(config, "llm", None), "max_etapes_agent", 8)
+        self.consignes = contexte.CONSIGNES  # + exemples personnels (IA-03), fixés pour la journée
 
     # --- Arrêt d'urgence (SEC-07) -----------------------------------------------------------
 
@@ -159,7 +160,7 @@ class Orchestrateur:
         historique = self.conversations.setdefault(conversation, [])
         ville = getattr(getattr(self.config, "initiative", None), "ville_meteo", "")
         prefixe = contexte.contexte_variable(canal, ville, self.en_jeu(), self._souvenirs(texte))
-        messages = [{"role": "system", "content": contexte.CONSIGNES}, *historique[-2 * TOURS_GARDES:],
+        messages = [{"role": "system", "content": self.consignes}, *historique[-2 * TOURS_GARDES:],
                     {"role": "user", "content": f"{prefixe}\n{texte}"}]
         debut_tour = len(messages) - 1
         schemas = self.registre.schemas()
@@ -242,8 +243,9 @@ class Orchestrateur:
                     and not tour.actions_rapides:
                 from jarvis.memoire.extraction import extraire_et_retenir
 
+                a_valider = getattr(getattr(self.config, "llm", None), "souvenirs_a_valider", True)
                 tache = asyncio.create_task(extraire_et_retenir(self.llm_rapide or self.llm, self.memoire, texte,
-                                                                texte_final, self.bus))
+                                                                texte_final, self.bus, a_valider))
                 self._taches_fond.add(tache)
                 tache.add_done_callback(self._taches_fond.discard)
         self.bus.publier("reponse", texte=texte_final, conversation=conversation, actions=tour.actions)

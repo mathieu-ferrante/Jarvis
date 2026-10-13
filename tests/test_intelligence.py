@@ -56,9 +56,9 @@ def test_souvenirs_automatiques(tmp_path):
         await asyncio.gather(*o._taches_fond)
 
     asyncio.run(scenario())
-    faits = memoire.lister()
-    assert len(faits) == 1 and faits[0]["source"] == "déduit de la conversation"
-    assert any(e.type == "souvenir" for e in o.bus.historique)
+    # IA-04 : proposé à Mathieu, pas retenu tant qu'il n'a pas accepté
+    assert memoire.lister() == [] and len(memoire.propositions()) == 1
+    assert any(e.type == "proposition_souvenir" for e in o.bus.historique)
 
 
 def test_pas_de_souvenir_depuis_un_contenu_lu(tmp_path):

@@ -24,7 +24,7 @@ from fastapi.staticfiles import StaticFiles
 log = logging.getLogger(__name__)
 DOSSIER_WEB = Path(__file__).resolve().parents[3] / "web" / "dist"
 TYPES_PUBLIES = {"notification", "confirmation", "reponse", "demande", "action", "tache", "arret", "pret", "souvenir",
-                 "pensee", "voix_etat", "voix_transcription", "voix_reponse", "voix_latence", "jeu", "briefing"}
+                 "pensee", "proposition_souvenir", "voix_etat", "voix_transcription", "voix_reponse", "voix_latence", "jeu", "briefing"}
 
 
 def decoder_audio(donnees: bytes) -> np.ndarray:
@@ -225,6 +225,17 @@ def creer_app(jarvis) -> FastAPI:
     @app.put("/api/memoire/{ident}")
     async def corriger(ident: int, corps: dict, a: dict = Depends(appareil)):
         if not jarvis.memoire.corriger(ident, str(corps.get("texte", ""))):
+            raise HTTPException(404)
+        return {"ok": True}
+
+    @app.get("/api/propositions")
+    async def propositions(a: dict = Depends(appareil)):
+        return {"propositions": jarvis.memoire.propositions()}
+
+    @app.post("/api/propositions/{ident}")
+    async def decider_proposition(ident: int, corps: dict, a: dict = Depends(appareil)):
+        r = jarvis.memoire.decider_proposition(ident, bool(corps.get("accepter")))
+        if r is None:
             raise HTTPException(404)
         return {"ok": True}
 

@@ -86,6 +86,10 @@ class Jarvis:
             config=self.config, memoire=self.memoire, coffre=self.coffre, services=self.services,
             en_jeu=lambda: self.etat_jeu["en_jeu"])
         self.services["taches"] = GestionnaireTaches(self.orchestrateur)
+        from jarvis.agent.contexte import CONSIGNES
+        from jarvis.agent.personnalisation import bloc_consignes
+
+        self.orchestrateur.consignes = CONSIGNES + bloc_consignes(self.journal.dernieres(500))
         from jarvis.serveur.multi import GestionnaireMulti
 
         self.multi = GestionnaireMulti(self)
@@ -143,9 +147,7 @@ class Jarvis:
 
     async def prechauffer(self) -> None:
         """Remplit le cache du contexte fixe (consignes + outils) : la 1re vraie requête est rapide (PERF-06)."""
-        from jarvis.agent.contexte import CONSIGNES
-
-        messages = [{"role": "system", "content": CONSIGNES}, {"role": "user", "content": "Bonjour."}]
+        messages = [{"role": "system", "content": self.orchestrateur.consignes}, {"role": "user", "content": "Bonjour."}]
         try:
             await self.llm.discuter(messages, self.registre.schemas(), max_tokens=1)
         except Exception:  # noqa: BLE001
@@ -191,6 +193,9 @@ class Jarvis:
     async def executer(self, avec_api: bool = True, avec_bureau: bool = False) -> None:
         GARDE.installer()  # SEC-04 : à partir d'ici, aucune sortie non déclarée
         self._taches.append(asyncio.create_task(self.rappels.boucle()))
+        repris = self.services["taches"].reprendre()  # IA-02 : tâches interrompues par un arrêt
+        if repris:
+            log.info("Tâches de fond reprises : %s", repris)
 
         async def position():
             from jarvis.outils.base import Contexte

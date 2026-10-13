@@ -49,5 +49,5 @@ def orchestrateur(tmp_path, script, outils=(), confirmations=False, **kwargs):
     bus = Bus()
     o = Orchestrateur(LLMScripte(script), registre, Journal(tmp_path / "journal.sqlite"),
                       ConfirmateurAutomatique(confirmations), bus, **kwargs)
-    o.services["taches"] = GestionnaireTaches(o)
+    o.services["taches"] = GestionnaireTaches(o, tmp_path / "taches.json")
     return o

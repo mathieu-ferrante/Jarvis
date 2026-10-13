@@ -127,6 +127,12 @@ class Initiative:
                     derniere_suggestion = maintenant
                     await self.suggestion()
                 await self._sauvegarde_si_due(maintenant, derniere_sauvegarde)
+                if self.etat.get("dernieres_habitudes") != maintenant.date().isoformat() and maintenant.hour >= 12:
+                    from jarvis.habitudes import proposer_habitudes  # IA-04, une fois par jour
+
+                    self.etat["dernieres_habitudes"] = maintenant.date().isoformat()
+                    self._sauver()
+                    await asyncio.to_thread(proposer_habitudes, self.jarvis.journal, self.jarvis.memoire, self.jarvis.bus)
                 derniere_sauvegarde = datetime.fromisoformat(self.etat.get("derniere_sauvegarde",
                                                                            derniere_sauvegarde.isoformat()))
             except Exception:  # noqa: BLE001 — l'initiative ne doit jamais tomber

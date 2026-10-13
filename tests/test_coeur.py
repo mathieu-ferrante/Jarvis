@@ -147,12 +147,14 @@ def test_trop_d_etapes(tmp_path):
     assert "trop d'étapes" in reponse and len(outil.appels) == 3
 
 
-def test_tache_de_fond_notifie(tmp_path):
+def test_tache_de_fond_planifiee_avec_reprise_d_etape(tmp_path):
     from jarvis.outils.coeur import LancerTacheDeFond
 
-    o = orchestrateur(tmp_path, [[("lancer_tache_de_fond", {"objectif": "trier"})], "Lancée."],
-                      [LancerTacheDeFond()])
-    o.llm.par_mot_cle["Tâche de fond"] = ["Compte rendu : 12 fichiers triés."]
+    o = orchestrateur(tmp_path, [[("lancer_tache_de_fond", {"objectif": "trier"})], "Lancée."], [LancerTacheDeFond()])
+    o.llm.par_mot_cle["Tu prépares le plan"] = ['["Lister les fichiers", "Les ranger"]']
+    o.llm.par_mot_cle["Étape 1/2"] = ["J'ai listé 12 fichiers."]
+    o.llm.par_mot_cle["Étape 2/2"] = ["ÉCHEC : dossier verrouillé.", "Rangés dans 3 dossiers."]
+    o.llm.par_mot_cle["Rédige le compte rendu"] = ["Compte rendu : 12 fichiers triés en 3 dossiers."]
 
     async def scenario():
         await o.repondre_texte("trie mes fichiers", canal="texte")
@@ -160,8 +162,40 @@ def test_tache_de_fond_notifie(tmp_path):
             await t.tache
 
     asyncio.run(scenario())
+    t = next(iter(o.services["taches"].taches.values()))
+    assert [e.etat for e in t.etapes] == ["faite", "faite"] and t.etapes[1].essais == 2  # nouvelle tentative
+    assert t.etat == "terminee"
     notif = [e for e in o.bus.historique if e.type == "notification"]
     assert notif and "12 fichiers" in notif[0].donnees["texte"]
+
+
+def test_tache_reprise_apres_redemarrage(tmp_path):
+    from jarvis.agent.taches import Etape, GestionnaireTaches, TacheFond
+
+    o = orchestrateur(tmp_path, [], [])
+    g = o.services["taches"]
+    t = TacheFond(7, "rapport", etapes=[Etape("Collecter", etat="faite", resultat="données"), Etape("Rédiger")])
+    g.taches[7] = t
+    g._sauver()
+    o2 = orchestrateur(tmp_path, [], [])
+    g2 = GestionnaireTaches(o2, tmp_path / "taches.json")  # nouveau démarrage : relit le fichier
+    o2.llm.par_mot_cle["Étape 2/2"] = ["Rapport rédigé."]
+    o2.llm.par_mot_cle["Rédige le compte rendu"] = ["Rapport prêt."]
+
+    async def scenario():
+        assert g2.reprendre() == [7]
+        await g2.taches[7].tache
+
+    asyncio.run(scenario())
+    assert g2.taches[7].etat == "terminee" and g2.taches[7].etapes[0].resultat == "données"
+    assert not any("Étape 1/2" in str(m) for appel in o2.llm.recus for m in appel)  # l'étape faite n'est pas refaite
+
+
+def test_lire_plan():
+    from jarvis.agent.taches import lire_plan
+
+    assert lire_plan('Voici : ["A", "B"]') == ["A", "B"]
+    assert lire_plan("1. Chercher\n2. Lire\n- Résumer") == ["Chercher", "Lire", "Résumer"]
 
 
 def test_validation_arguments():

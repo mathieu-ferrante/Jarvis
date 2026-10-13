@@ -41,7 +41,7 @@ def lire_faits(texte: str) -> list[str]:
     return [f.strip() for f in faits if isinstance(f, str) and f.strip().lower().startswith("mathieu")][:5]
 
 
-async def extraire_et_retenir(client, memoire, demande: str, reponse: str, bus=None) -> list[str]:
+async def extraire_et_retenir(client, memoire, demande: str, reponse: str, bus=None, a_valider: bool = True) -> list[str]:
     if not merite_extraction(demande):
         return []
     messages = [{"role": "system", "content": CONSIGNE},
@@ -53,6 +53,13 @@ async def extraire_et_retenir(client, memoire, demande: str, reponse: str, bus=N
         return []
     retenus = []
     for fait in lire_faits(r.texte):
+        if a_valider:  # IA-04 : proposé à Mathieu, retenu seulement s'il accepte
+            ident = memoire.proposer(fait, "conversation")
+            if ident is not None:
+                retenus.append(fait)
+                if bus:
+                    bus.publier("proposition_souvenir", texte=fait, id=ident)
+            continue
         resultat = memoire.memoriser(fait, source="déduit de la conversation", categorie="general")
         retenus.append(fait)
         if bus and not resultat["mis_a_jour"]:

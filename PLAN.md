@@ -83,6 +83,8 @@ validé sur le PC de jeu** · `[ ]` à faire.
 | D17 | 2026-10-13 | Notifications du téléphone par la connexion WebSocket directe (pas de Web Push) | Le Web Push passe par les serveurs de Google ; l'appli Android (J13) gardera la connexion en arrière-plan |
 | D18 | 2026-10-13 | Interface compilée (`web/dist`) commitée | Pas besoin de Node sur le PC de jeu |
 | D20 | 2026-10-13 | **Postgame : Jarvis lit les mesures locales et rédige lui-même les débriefs** ; l'appel à `/api/parties/{id}/debrief` est interdit dans le code | Postgame fait rédiger ses débriefs par Gemini : les déclencher depuis Jarvis ferait sortir des données à cause de Jarvis (règle absolue). Client aligné sur la vraie API (port 8765), vérifié contre le serveur de démonstration |
+| D21 | 2026-10-13 | **IA-03 : pas d'entraînement LoRA ; personnalisation par les consignes et la mémoire** (exemples réels de Mathieu tirés du journal, ajoutés aux consignes fixes chaque jour) | Vérifié en premier comme demandé : l'outil d'entraînement de llama.cpp est expérimental (réglage complet FP32, 24 Go pour 1 G de paramètres) et absent des binaires Windows ; ROCm ne gère pas officiellement la RX 6750 XT sous Windows ; la piste LoRA Vulkan (fork qvac) reste à surveiller |
+| D22 | 2026-10-13 | Souvenirs déduits et habitudes **proposés avant d'être retenus** (IA-04) ; un refus n'est jamais reproposé | Transparence et contrôle de Mathieu sur ce que Jarvis apprend |
 | D19 | 2026-10-13 | Transcription anticipée dès 200 ms de silence | Masque le temps de transcription ; gain non mesurable sur le portable (bruit ±600 ms), à confirmer au banc |
 
 ## Valeurs provisoires (en attendant le PC de jeu)

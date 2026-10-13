@@ -57,6 +57,14 @@ CREATE TRIGGER IF NOT EXISTS echanges_ai AFTER INSERT ON echanges BEGIN
 CREATE TRIGGER IF NOT EXISTS echanges_ad AFTER DELETE ON echanges BEGIN
     INSERT INTO echanges_fts(echanges_fts, rowid, demande, reponse) VALUES ('delete', old.id, old.demande, old.reponse); END;
 
+CREATE TABLE IF NOT EXISTS propositions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    texte TEXT NOT NULL,
+    origine TEXT,                -- conversation, habitude
+    cree TEXT NOT NULL,
+    etat TEXT DEFAULT 'en_attente'  -- en_attente, acceptee, refusee
+);
+
 CREATE TABLE IF NOT EXISTS documents (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     chemin TEXT NOT NULL,
@@ -278,6 +286,40 @@ class Memoire:
                 resultat.append({"chemin": r["chemin"], "morceau": r["morceau"], "texte": r["texte"],
                                  "score": round(float(scores[k]), 3)})
             return resultat
+
+    # --- Propositions (IA-04) : rien n'est retenu sans l'accord de Mathieu ---------------------
+
+    def proposer(self, texte: str, origine: str = "conversation") -> int | None:
+        """Propose un souvenir. None s'il est déjà connu, déjà proposé ou déjà refusé (pas d'insistance)."""
+        if self.rechercher(texte, n=1, seuil=0.85, plein_texte=False):
+            return None
+        q, _ = self._plonger([texte])
+        with self._verrou:
+            anciennes = self._cnx.execute("SELECT id, texte FROM propositions").fetchall()
+        if anciennes:
+            vecteurs, _ = self._plonger([r["texte"] for r in anciennes])
+            if float(np.max(vecteurs @ q[0])) >= 0.85:
+                return None
+        with self._verrou, self._cnx:
+            c = self._cnx.execute("INSERT INTO propositions (texte, origine, cree) VALUES (?,?,?)",
+                                  (texte, origine, datetime.now().isoformat(timespec="seconds")))
+            return int(c.lastrowid)
+
+    def propositions(self, etat: str = "en_attente") -> list[dict]:
+        with self._verrou:
+            return [dict(r) for r in self._cnx.execute("SELECT * FROM propositions WHERE etat = ? ORDER BY id DESC",
+                                                       (etat,))]
+
+    def decider_proposition(self, ident: int, accepter: bool) -> dict | None:
+        with self._verrou:
+            r = self._cnx.execute("SELECT * FROM propositions WHERE id = ? AND etat = 'en_attente'", (ident,)).fetchone()
+        if r is None:
+            return None
+        with self._verrou, self._cnx:
+            self._cnx.execute("UPDATE propositions SET etat = ? WHERE id = ?", ("acceptee" if accepter else "refusee", ident))
+        if accepter:
+            return self.memoriser(r["texte"], source=f"proposé par Jarvis ({r['origine']}), accepté par Mathieu")
+        return {"refusee": True}
 
     def statistiques(self) -> dict:
         with self._verrou:

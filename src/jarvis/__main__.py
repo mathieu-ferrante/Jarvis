@@ -254,6 +254,10 @@ def main(argv: list[str] | None = None) -> int:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     brut = list(sys.argv[1:] if argv is None else argv)
+    if brut[:1] == ["evaluer"] and len(brut) == 2:  # IA-05 : python -m jarvis evaluer <modèle>
+        from jarvis.banc import evaluer
+
+        return evaluer(brut[1])
     if brut and brut[0] in ("diagnostic", "banc"):  # options transmises telles quelles au sous-programme
         if brut[0] == "diagnostic":
             from jarvis.diagnostic.__main__ import main as diagnostic

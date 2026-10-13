@@ -151,3 +151,35 @@ class ChercherDocuments(Outil):
 
 OUTILS = [Memoriser, RechercherMemoire, CorrigerSouvenir, Oublier, ChercherConversations, IndexerDocuments,
           ChercherDocuments]
+
+
+class PropositionsSouvenirs(Outil):
+    nom = "propositions_souvenirs"
+    description = ("Liste ce que Jarvis propose de retenir (souvenirs déduits des conversations, habitudes repérées), "
+                   "en attente de l'accord de Mathieu.")
+
+    async def executer(self, ctx: Contexte) -> Resultat:
+        props = await asyncio.to_thread(_memoire(ctx).propositions)
+        if not props:
+            return Resultat(True, "Aucune proposition en attente.")
+        return Resultat(True, " ; ".join(f"n° {p['id']} ({p['origine']}) : {p['texte']}" for p in props), donnees=props)
+
+
+class ValiderSouvenir(Outil):
+    nom = "valider_souvenir"
+    description = "Accepte (retient) ou refuse une proposition de souvenir, par son numéro."
+    parametres = {"type": "object", "properties": {"id": {"type": "integer"}, "accepter": {"type": "boolean"}},
+                  "required": ["id", "accepter"]}
+    niveau = Niveau.REVERSIBLE
+
+    def decrire(self, args):
+        return f"{'retenir' if args.get('accepter') else 'écarter'} la proposition n° {args.get('id')}"
+
+    async def executer(self, ctx: Contexte, id: int, accepter: bool) -> Resultat:  # noqa: A002
+        r = await asyncio.to_thread(_memoire(ctx).decider_proposition, id, accepter)
+        if r is None:
+            return Resultat.echec(f"Aucune proposition en attente n° {id}.")
+        return Resultat(True, "Retenu." if accepter else "D'accord, je ne le retiens pas et je ne le reproposerai pas.")
+
+
+OUTILS += [PropositionsSouvenirs, ValiderSouvenir]
