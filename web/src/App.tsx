@@ -379,6 +379,24 @@ function Rappels() {
   );
 }
 
+function Proactivite() {
+  const [d, recharger] = useDonnees<{ niveau: string }>("/api/proactivite");
+  const choisir = async (niveau: string) => {
+    await api("/api/proactivite", { method: "POST", body: JSON.stringify({ niveau }) });
+    recharger();
+  };
+  return (
+    <div className="entete-section">
+      <h3>Initiative de Jarvis</h3>
+      <div className="actions">
+        {["silencieux", "discret", "actif"].map((n) => (
+          <button key={n} className={d?.niveau === n ? "oui" : ""} onClick={() => choisir(n)}>{n}</button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function Tableau() {
   const [d] = useDonnees<any>("/api/etat", 3000);
   if (!d) return <p className="vide">Chargement…</p>;
@@ -395,6 +413,7 @@ function Tableau() {
         <Tuile titre="GPU" valeur={d.gpu?.charge_3d_pct != null ? `${d.gpu.charge_3d_pct} % · ${d.gpu.vram_go} Go` : "—"} />
         <Tuile titre="Mode" valeur={d.en_jeu?.en_jeu ? `jeu (${d.en_jeu.jeu})` : "normal"} />
       </div>
+      <Proactivite />
       <h3>Derniers échanges</h3>
       <table>
         <thead><tr><th>Canal</th><th>Demande</th><th>Transcription</th><th>Modèle</th><th>Voix</th><th>Total</th></tr></thead>

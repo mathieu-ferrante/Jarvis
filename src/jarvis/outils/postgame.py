@@ -185,3 +185,25 @@ class DebriefPartie(Outil):
 
 
 OUTILS = [StatistiquesJeu, DebriefPartie]
+
+
+class CoachEnDirect(Outil):
+    nom = "coach_en_direct"
+    description = ("Pendant une partie, SEULEMENT si Mathieu le demande (« un conseil ? ») : lit l'état en direct "
+                   "fourni par Postgame (CS2 : GSI ; LoL : API locale du client) pour donner UN conseil bref et concret.")
+    parametres = {"type": "object", "properties": {"jeu": {"type": "string", "enum": ["cs2", "lol"]}},
+                  "required": ["jeu"]}
+    hotes = ("127.0.0.1", "localhost")
+
+    async def executer(self, ctx: Contexte, jeu: str) -> Resultat:
+        try:
+            etat = await ClientPostgame(ctx).get(f"/api/{jeu}/live")
+        except Exception as e:  # noqa: BLE001
+            return Resultat.echec(f"État en direct indisponible ({type(e).__name__}) : Postgame est-il lancé ?")
+        if not etat or (isinstance(etat, dict) and not any(etat.values())):
+            return Resultat(True, "Aucune partie en cours détectée par Postgame.")
+        return Resultat(True, "État en direct (donne UN conseil, une phrase, sans chiffre inventé) : "
+                              + compacter(etat, 3000), donnees=etat)
+
+
+OUTILS.append(CoachEnDirect)

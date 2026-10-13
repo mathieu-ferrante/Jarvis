@@ -66,3 +66,26 @@ class Heure(Outil):
 
 
 OUTILS = [LancerTacheDeFond, EtatTaches, JournalActions, Heure]
+
+
+class ReglerProactivite(Outil):
+    nom = "regler_proactivite"
+    description = ("Règle à quel point Jarvis prend des initiatives : silencieux (jamais de suggestion), discret "
+                   "(2 par jour), actif (5 par jour, et propose les habitudes acceptées à l'heure habituelle).")
+    parametres = {"type": "object", "properties": {"niveau": {"type": "string", "enum": ["silencieux", "discret", "actif"]}},
+                  "required": ["niveau"]}
+    niveau = Niveau.REVERSIBLE
+
+    def decrire(self, args):
+        return f"passer la proactivité en mode {args.get('niveau')}"
+
+    async def executer(self, ctx: Contexte, niveau: str) -> Resultat:
+        application = ctx.services.get("application")
+        initiative = getattr(application, "initiative", None)
+        if initiative is None:
+            return Resultat.echec("Module d'initiative indisponible.")
+        initiative.regler_niveau(niveau)
+        return Resultat(True, f"Proactivité : {niveau}.", donnees={"niveau": niveau})
+
+
+OUTILS.append(ReglerProactivite)

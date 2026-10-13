@@ -228,6 +228,22 @@ def creer_app(jarvis) -> FastAPI:
             raise HTTPException(404)
         return {"ok": True}
 
+    @app.get("/api/proactivite")
+    async def proactivite(a: dict = Depends(appareil)):
+        initiative = getattr(jarvis, "initiative", None)
+        return {"niveau": initiative.niveau if initiative else "discret"}
+
+    @app.post("/api/proactivite")
+    async def regler_proactivite(corps: dict, a: dict = Depends(appareil)):
+        initiative = getattr(jarvis, "initiative", None)
+        if initiative is None:
+            raise HTTPException(503)
+        try:
+            initiative.regler_niveau(str(corps.get("niveau")))
+        except ValueError as e:
+            raise HTTPException(400, "niveau : silencieux, discret ou actif") from e
+        return {"niveau": initiative.niveau}
+
     @app.get("/api/propositions")
     async def propositions(a: dict = Depends(appareil)):
         return {"propositions": jarvis.memoire.propositions()}

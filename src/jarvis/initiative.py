@@ -45,6 +45,16 @@ class Initiative:
         self.fichier.parent.mkdir(parents=True, exist_ok=True)
         self.fichier.write_text(json.dumps(self.etat, ensure_ascii=False), "utf-8")
 
+    def regler_niveau(self, niveau: str) -> None:
+        """INI-10 : silencieux, discret ou actif (persistant)."""
+        if niveau not in SUGGESTIONS_PAR_JOUR:
+            raise ValueError(niveau)
+        self.etat["niveau"] = niveau
+        self.jarvis.config.initiative.suggestions = niveau != "silencieux"
+        self._sauver()
+        self.jarvis.journal.consigner(outil="regler_proactivite", arguments={"niveau": niveau}, niveau="reversible",
+                                      decision="annoncee", origine="reglage", ok=True)
+
     @property
     def niveau(self) -> str:
         if not self.jarvis.config.initiative.suggestions:
@@ -107,6 +117,39 @@ class Initiative:
         self.jarvis.bus.notifier("Suggestion", texte, categorie="suggestion")
         return texte
 
+    # --- Habitudes acceptées, proposées à l'heure habituelle (mode actif) -------------------
+
+    def habitude_a_proposer(self, maintenant: datetime) -> dict | None:
+        """Une habitude ACCEPTÉE par Mathieu, dont c'est l'heure (± 10 min), pas encore faite ni proposée aujourd'hui."""
+        if self.niveau != "actif" or self.jarvis.etat_jeu["en_jeu"]:
+            return None
+        from jarvis.habitudes import detecter
+
+        acceptees = {f["texte"] for f in self.jarvis.memoire.lister(None, 200) if "accepté" in (f.get("source") or "")}
+        deja = set(self.etat.get("habitudes_proposees", {}).get(maintenant.date().isoformat(), []))
+        actions = self.jarvis.journal.dernieres(2000)
+        faites_aujourd_hui = {(a["outil"], a["arguments"]) for a in actions
+                              if a.get("ok") and a["horodatage"].startswith(maintenant.date().isoformat())}
+        for h in detecter(actions, maintenant):
+            if h["texte"] not in acceptees or h["texte"] in deja:
+                continue
+            heures, _, minutes = h["heure"].replace(" h ", ":").replace(" h", ":00").partition(":")
+            ecart = abs((int(heures) * 60 + int(minutes or 0)) - (maintenant.hour * 60 + maintenant.minute))
+            deja_fait = any(o == h["outil"] for o, _ in faites_aujourd_hui)
+            if min(ecart, 1440 - ecart) <= 10 and not deja_fait:
+                return h
+        return None
+
+    async def proposer_habitude(self, h: dict, maintenant: datetime) -> None:
+        texte = f"C'est l'heure où tu {h['texte'].split('Mathieu ', 1)[-1].split(' vers ')[0]} d'habitude. Je le fais ?"
+        self.etat.setdefault("habitudes_proposees", {}).setdefault(maintenant.date().isoformat(), []).append(h["texte"])
+        self._sauver()
+        # La proposition entre dans la conversation : un simple « oui » suffit ensuite
+        self.jarvis.orchestrateur.conversations.setdefault("principale", []).append({"role": "assistant", "content": texte})
+        self.jarvis.journal.consigner(outil="suggestion", arguments={"habitude": h["texte"]}, niveau="lecture",
+                                      decision="libre", origine="initiative", ok=True, resultat=texte)
+        self.jarvis.bus.notifier("Suggestion", texte, categorie="suggestion")
+
     # --- Boucle -----------------------------------------------------------------------------
 
     async def boucle(self) -> None:
@@ -127,6 +170,8 @@ class Initiative:
                     derniere_suggestion = maintenant
                     await self.suggestion()
                 await self._sauvegarde_si_due(maintenant, derniere_sauvegarde)
+                if self.jarvis.metriques.pret and inactivite < 600 and (h := self.habitude_a_proposer(maintenant)):
+                    await self.proposer_habitude(h, maintenant)
                 if self.etat.get("dernieres_habitudes") != maintenant.date().isoformat() and maintenant.hour >= 12:
                     from jarvis.habitudes import proposer_habitudes  # IA-04, une fois par jour
 
