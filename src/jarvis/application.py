@@ -68,12 +68,17 @@ class Jarvis:
         self.llm_rapide = self.llm
         self.memoire = Memoire(plongeur=PlongeurAvecRepli(PlongeurLocal(f"http://127.0.0.1:{c.port_embeddings}")))
         self.rappels = ServiceRappels(bus=self.bus)
+        from jarvis.contexte_rappels import RappelsContexte
+
+        self.rappels_contexte = RappelsContexte(bus=self.bus)
+        self.bus.abonner(self.rappels_contexte.sur_evenement)
         self.appareils = Appareils()
         self.registre = Registre().charger_tout()
         for erreur in self.registre.erreurs:
             log.warning("Outils non chargés : %s", erreur)
         self.confirmateur = permissions.ConfirmateurFile(self._publier_confirmation, delai_s=90)
-        self.services: dict = {"rappels": self.rappels, "bus": self.bus, "appareils": self.appareils,
+        self.services: dict = {"rappels": self.rappels, "rappels_contexte": self.rappels_contexte,
+                               "bus": self.bus, "appareils": self.appareils,
                                "application": self, "llm": self.llm}
         self.etat_jeu = {"en_jeu": False, "jeu": None}
         self.orchestrateur = Orchestrateur(
@@ -175,6 +180,19 @@ class Jarvis:
     async def executer(self, avec_api: bool = True, avec_bureau: bool = False) -> None:
         GARDE.installer()  # SEC-04 : à partir d'ici, aucune sortie non déclarée
         self._taches.append(asyncio.create_task(self.rappels.boucle()))
+
+        async def position():
+            from jarvis.outils.base import Contexte
+            from jarvis.outils.rappels import position_du_telephone
+
+            resultat = await position_du_telephone(Contexte(config=self.config, services=self.services))
+            # Consultation sensible : consignée même quand elle est automatique (SEC-03)
+            self.journal.consigner(outil="position_telephone", arguments={}, niveau="lecture", decision="libre",
+                                   demande="vérification des rappels de lieu", origine="initiative",
+                                   ok=resultat is not None, resultat="position obtenue" if resultat else "indisponible")
+            return resultat
+
+        self._taches.append(asyncio.create_task(self.rappels_contexte.boucle_position(position)))
         if self.avec_modeles:
             self._taches.append(asyncio.create_task(self.demarrer_modeles()))
         from jarvis.initiative import Initiative

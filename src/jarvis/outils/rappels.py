@@ -90,3 +90,69 @@ class AnnulerRappel(Outil):
 
 
 OUTILS = [CreerRappel, CreerMinuteur, ListerRappels, AnnulerRappel]
+
+
+class CreerRappelContextuel(Outil):
+    nom = "creer_rappel_contextuel"
+    description = ("Crée un rappel déclenché par le contexte : en arrivant à un lieu (« quand je passe à la "
+                   "boulangerie de la rue X », « ici » = position actuelle du téléphone), en utilisant un appareil "
+                   "(« quand je suis sur le Mac »), ou à la fin d'une partie (« après ma partie »).")
+    parametres = {"type": "object", "properties": {
+        "texte": {"type": "string"},
+        "declencheur": {"type": "string", "enum": ["lieu", "appareil", "fin_partie"]},
+        "lieu": {"type": "string", "description": "Adresse ou nom du lieu, ou « ici »."},
+        "appareil": {"type": "string", "description": "Nom de l'appareil (Mac, téléphone)."},
+        "recurrent": {"type": "boolean", "description": "À chaque fois (sinon une seule fois)."}},
+        "required": ["texte", "declencheur"]}
+    niveau = Niveau.REVERSIBLE
+    hotes = ("nominatim.openstreetmap.org",)
+
+    def decrire(self, args):
+        cible = args.get("lieu") or args.get("appareil") or "la fin de la partie"
+        return f"créer un rappel « {args.get('texte')} » ({args.get('declencheur')} : {cible})"
+
+    async def executer(self, ctx: Contexte, texte: str, declencheur: str, lieu: str = "", appareil: str = "",
+                       recurrent: bool = False) -> Resultat:
+        service = ctx.services.get("rappels_contexte")
+        if service is None:
+            return Resultat.echec("Rappels contextuels indisponibles.")
+        condition: dict = {}
+        if declencheur == "lieu":
+            if not lieu:
+                return Resultat.echec("Quel lieu ? (adresse, nom, ou « ici »)")
+            if lieu.strip().lower() in ("ici", "là", "la"):
+                position = await position_du_telephone(ctx)
+                if not position:
+                    return Resultat.echec("Position du téléphone indisponible (partage de position désactivé ?).")
+                condition = {"lat": position[0], "lon": position[1], "rayon_m": 150, "nom": "l'endroit où tu étais"}
+            else:
+                r = await ctx.http("GET", "https://nominatim.openstreetmap.org/search",
+                                   params={"q": lieu, "format": "json", "limit": 1, "accept-language": "fr"},
+                                   headers={"User-Agent": "Jarvis-assistant-personnel/0.1 (usage prive)"})
+                resultats = r.json() if r.status_code == 200 else []
+                if not resultats:
+                    return Resultat.echec(f"Lieu introuvable : {lieu}. Donne une adresse plus précise.")
+                condition = {"lat": float(resultats[0]["lat"]), "lon": float(resultats[0]["lon"]), "rayon_m": 150,
+                             "nom": lieu}
+        elif declencheur == "appareil":
+            if not appareil:
+                return Resultat.echec("Sur quel appareil ?")
+            condition = {"appareil": appareil}
+        ident = service.ajouter(texte, declencheur, condition, recurrent)
+        return Resultat(True, f"Rappel contextuel n° {ident} créé : « {texte} » ({declencheur}"
+                              f"{' : ' + (lieu or appareil) if lieu or appareil else ''}).", donnees={"id": ident})
+
+
+async def position_du_telephone(ctx: Contexte) -> tuple[float, float] | None:
+    """Demande sa position au téléphone appairé (outil distant « position », s'il est autorisé)."""
+    from jarvis.contexte_rappels import lire_position
+
+    registre = getattr(ctx.services.get("orchestrateur"), "registre", None)
+    outil = next((o for n, o in (registre.outils.items() if registre else []) if n.endswith("_position")), None)
+    if outil is None:
+        return None
+    r = await outil.executer(ctx)
+    return lire_position(r.message) if r.ok else None
+
+
+OUTILS.append(CreerRappelContextuel)
