@@ -24,3 +24,4 @@ secrets/
 
 # Interface compilée : commitée pour éviter Node sur le PC de jeu
 !web/dist/
+banc-resultats/

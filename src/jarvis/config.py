@@ -42,6 +42,7 @@ class ConfigVoix:
     seuil_reveil: float = 0.5
     seuil_reveil_bas: float = 0.15  # en dessous de 0,5, on vérifie « Jarvis » par la transcription
     fin_de_parole_ms: int = 400
+    anticipation_ms: int = 200  # transcription anticipée dès 200 ms de silence (J11)
     duree_max_phrase_s: float = 15.0
     ecoute_continue_s: float = 6.0  # VOX-05
     interruption: str = "reveil"  # "reveil" (dire « Jarvis ») ou "vad" (toute parole, casque requis)

@@ -87,6 +87,10 @@ class Memoire:
         self._cnx = sqlite3.connect(self.chemin, check_same_thread=False)
         self._cnx.row_factory = sqlite3.Row
         self._cnx.executescript(_SCHEMA)
+        self._cache_vecteurs: dict[str, tuple[str, list[int], np.ndarray]] = {}  # PERF-13
+
+    def _invalider(self, table: str) -> None:
+        self._cache_vecteurs.pop(table, None)
 
     # --- Plongements ------------------------------------------------------------------------
 
@@ -98,7 +102,15 @@ class Memoire:
         return self.plongeur.plonger(textes, requete), self.plongeur.identifiant
 
     def _vecteurs_table(self, table: str, identifiant: str) -> tuple[list[int], np.ndarray]:
-        """Vecteurs d'une table, recalculés au besoin si le modèle d'embeddings a changé."""
+        """Vecteurs d'une table, gardés en mémoire (une matrice) et recalculés si le modèle a changé."""
+        cache = self._cache_vecteurs.get(table)
+        if cache and cache[0] == identifiant:
+            return cache[1], cache[2]
+        ids, matrice = self._charger_vecteurs(table, identifiant)
+        self._cache_vecteurs[table] = (identifiant, ids, matrice)
+        return ids, matrice
+
+    def _charger_vecteurs(self, table: str, identifiant: str) -> tuple[list[int], np.ndarray]:
         lignes = self._cnx.execute(f"SELECT id, texte, vecteur, plongeur FROM {table}").fetchall()
         a_refaire = [r for r in lignes if r["plongeur"] != identifiant or r["vecteur"] is None]
         if a_refaire:
@@ -122,6 +134,7 @@ class Memoire:
         with self._verrou:
             proches = self.rechercher(texte, n=1, seuil=SEUIL_DOUBLON, plein_texte=False)
             vecteur, ident = self._plonger([texte])
+            self._invalider("faits")  # après la recherche ci-dessus, qui a rempli le cache
             with self._cnx:
                 if proches:
                     self._cnx.execute("UPDATE faits SET texte = ?, source = ?, modifie = ?, vecteur = ?, plongeur = ? "
@@ -167,6 +180,7 @@ class Memoire:
                                       "LIMIT ?", (n,))]
 
     def corriger(self, ident: int, texte: str) -> bool:
+        self._invalider("faits")
         vecteur, plongeur = self._plonger([texte])
         with self._verrou, self._cnx:
             c = self._cnx.execute("UPDATE faits SET texte = ?, modifie = ?, vecteur = ?, plongeur = ? WHERE id = ?",
@@ -176,6 +190,7 @@ class Memoire:
 
     def oublier(self, ident: int) -> bool:
         """Suppression réelle (et non un simple masquage), y compris de l'index plein texte."""
+        self._invalider("faits")
         with self._verrou, self._cnx:
             c = self._cnx.execute("DELETE FROM faits WHERE id = ?", (ident,))
         if c.rowcount:
@@ -222,6 +237,7 @@ class Memoire:
     # --- Documents (MEM-02) -----------------------------------------------------------------
 
     def indexer_texte(self, chemin: str, texte: str, modifie: float, taille_morceau: int = 800) -> int:
+        self._invalider("documents")
         morceaux = []
         paragraphe = ""
         for bloc in re.split(r"\n\s*\n", texte):

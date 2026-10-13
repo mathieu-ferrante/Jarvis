@@ -60,6 +60,7 @@ class ParametresBoucle:
     interruption: str = "reveil"  # "reveil" ou "vad"
     seuil_parole: float = 0.5
     preambule_ms: int = 300  # audio gardé avant le début de parole détecté
+    anticipation_ms: int = 200  # silence à partir duquel la transcription commence (0 = désactivé)
 
 
 _PREFIXE_REVEIL = re.compile(r"^\s*(h?[ée]+y?\s*,?\s*)?(dj?|j)a+r+v+i+\w*\s*[,.!?]?\s*", re.I)
@@ -95,6 +96,7 @@ class BoucleVocale:
         self._annonces: asyncio.Queue[str] = asyncio.Queue()
         self._arret = asyncio.Event()
         self._confirmation: asyncio.Future | None = None
+        self._anticipation: asyncio.Task | None = None
 
     # --- Évènements -------------------------------------------------------------------------
 
@@ -174,6 +176,9 @@ class BoucleVocale:
             self.reveil.reinitialiser()
 
     def _commencer_ecoute(self, etat: str = "ecoute") -> None:
+        if self._anticipation is not None:
+            self._anticipation.cancel()
+            self._anticipation = None
         self._tampon = []
         self._parole_commencee = False
         self._silence_ms = 0.0
@@ -199,6 +204,14 @@ class BoucleVocale:
             return
         self._tampon.append(trame)
         self._silence_ms = 0.0 if parole else self._silence_ms + DUREE_TRAME_MS
+        if parole and self._anticipation is not None:  # Mathieu reprend : la transcription anticipée est caduque
+            self._anticipation.cancel()
+            self._anticipation = None
+        elif (not parole and self._anticipation is None and p.anticipation_ms
+              and self._silence_ms >= p.anticipation_ms and self.etat != "confirmation"):
+            # Transcription anticipée (extensions §2.2) : prête quand la fin de parole sera confirmée
+            son_anticipe = np.concatenate(self._tampon).astype(np.float32) / 32768
+            self._anticipation = asyncio.create_task(asyncio.to_thread(self.stt.transcrire, son_anticipe))
         trop_long = len(self._tampon) * DUREE_TRAME_MS > p.duree_max_phrase_s * 1000
         if self._silence_ms >= p.fin_de_parole_ms or trop_long:
             son = np.concatenate(self._tampon)
@@ -209,7 +222,8 @@ class BoucleVocale:
             # NF-01 se mesure depuis la vraie fin de parole, silence d'attente compris
             mesure = Mesure(fin_parole=time.monotonic() - self._silence_ms / 1000)
             self._changer_etat("reflexion")
-            self._tache = asyncio.create_task(self._repondre(son, mesure))
+            anticipation, self._anticipation = self._anticipation, None
+            self._tache = asyncio.create_task(self._repondre(son, mesure, anticipation))
 
     def _detecter_interruption(self, trame: np.ndarray) -> bool:
         if self.parametres.interruption == "vad":
@@ -254,8 +268,16 @@ class BoucleVocale:
 
     # --- Réponse ----------------------------------------------------------------------------
 
-    async def _repondre(self, son: np.ndarray, mesure: Mesure) -> None:
-        texte = retirer_mot_reveil(await asyncio.to_thread(self.stt.transcrire, son.astype(np.float32) / 32768))
+    async def _repondre(self, son: np.ndarray, mesure: Mesure, anticipation: asyncio.Task | None = None) -> None:
+        brut = None
+        if anticipation is not None:
+            try:
+                brut = await anticipation  # déjà (presque) terminée : le temps de transcription est masqué
+            except (asyncio.CancelledError, Exception):  # noqa: BLE001
+                brut = None
+        if brut is None:
+            brut = await asyncio.to_thread(self.stt.transcrire, son.astype(np.float32) / 32768)
+        texte = retirer_mot_reveil(brut)
         mesure.transcription = time.monotonic()
         mesure.texte = texte
         self._emettre("transcription", texte=texte)

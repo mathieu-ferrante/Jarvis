@@ -292,3 +292,16 @@ def test_http_refuse_hote_non_declare():
     ctx.outil = meteo.Meteo()
     with pytest.raises(PermissionError):
         asyncio.run(ctx.http("GET", "https://api.openai.com/v1/models"))
+
+
+def test_cache_des_vecteurs_suit_les_ecritures(tmp_path):
+    m = memoire(tmp_path)
+    m.memoriser("Mathieu aime le basket")
+    assert m.rechercher("basket")  # remplit le cache
+    m.memoriser("Mathieu collectionne les vinyles de jazz")
+    assert any("vinyles" in f["texte"] for f in m.rechercher("vinyles jazz", plein_texte=False))
+    ident = m.rechercher("vinyles jazz")[0]["id"]
+    m.corriger(ident, "Mathieu collectionne les vinyles de funk")
+    assert any("funk" in f["texte"] for f in m.rechercher("vinyles funk", plein_texte=False))
+    m.oublier(ident)
+    assert not any("vinyles" in f["texte"] for f in m.rechercher("vinyles", plein_texte=False))

@@ -155,7 +155,8 @@ class Jarvis:
             reveil=moteurs.DetecteurReveil(v.seuil_reveil, v.seuil_reveil_bas, stt),
             vad=moteurs.DetecteurParole(), stt=stt, tts=moteurs.Synthese(v.tts), cerveau=self.orchestrateur,
             parametres=ParametresBoucle(fin_de_parole_ms=v.fin_de_parole_ms, duree_max_phrase_s=v.duree_max_phrase_s,
-                                        ecoute_continue_s=v.ecoute_continue_s, interruption=v.interruption),
+                                        ecoute_continue_s=v.ecoute_continue_s, interruption=v.interruption,
+                                        anticipation_ms=v.anticipation_ms),
             sur_evenement=self._evenement_voix, silencieux=lambda: self.etat_jeu["en_jeu"])
 
     def _evenement_voix(self, type_: str, donnees: dict) -> None:

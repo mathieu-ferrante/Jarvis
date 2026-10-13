@@ -41,6 +41,7 @@ class Lancement:
     speculatif: str = "aucun"  # aucun, brouillon (petit modèle), mtp, ngram
     brouillon: str = "qwen3.5-0.8b"  # modèle brouillon (même famille de tokeniseur que le principal)
     cache_kv: str = "q8_0"  # f16 ou q8_0 : q8_0 divise par deux la mémoire du contexte
+    emplacements: int = 2  # slots llama-server (voir _commande)
 
 
 class ServeurModele:
@@ -59,15 +60,19 @@ class ServeurModele:
     def _commande(self, l: Lancement) -> list[str]:
         binaires = dossier_binaires("cpu" if l.cpu_seul and l.backend == "vulkan" else l.backend)
         base = [str(binaires / "llama-server.exe"), "--host", "127.0.0.1", "--port", str(l.port),
-                "--offline", "--no-webui", "-np", "1"]
+                "--offline", "--no-webui"]
         if l.modele == "embeddings":
-            return base + ["-m", str(modeles.chemin(modeles.EMBEDDINGS)), "--embedding", "--pooling", "last",
+            return base + ["-np", "1", "-m", str(modeles.chemin(modeles.EMBEDDINGS)), "--embedding", "--pooling", "last",
                            "-ngl", "0", "-c", "2048"]
         m = modeles.modele_llm(l.modele)
         # La « réflexion » est pilotée requête par requête (chat_template_kwargs) : désactivée pour
         # les commandes simples, activée pour les demandes complexes ; les pensées vont dans
         # reasoning_content et ne sont jamais lues à voix haute.
-        commande = base + ["-m", str(modeles.chemin(m.gguf)), "-c", str(l.contexte), "--jinja",
+        # Deux emplacements : la conversation garde son contexte fixe en cache pendant que les requêtes
+        # annexes (souvenirs, suggestions, vision) passent par l'autre (llama-server choisit
+        # l'emplacement dont le préfixe ressemble le plus). Le contexte total est doublé en conséquence.
+        commande = base + ["-np", str(l.emplacements), "-c", str(l.contexte * l.emplacements),
+                           "-m", str(modeles.chemin(m.gguf)), "--jinja",
                            "--reasoning-format", "deepseek", "-fa", "auto", *m.options_serveur]
         if l.cache_kv != "f16":
             commande += ["-ctk", l.cache_kv, "-ctv", l.cache_kv]

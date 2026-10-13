@@ -189,6 +189,15 @@ def cmd_banc(args) -> int:
 def main(argv: list[str] | None = None) -> int:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    brut = list(sys.argv[1:] if argv is None else argv)
+    if brut and brut[0] in ("diagnostic", "banc"):  # options transmises telles quelles au sous-programme
+        if brut[0] == "diagnostic":
+            from jarvis.diagnostic.__main__ import main as diagnostic
+
+            return diagnostic(brut[1:])
+        from jarvis.banc import main as banc
+
+        return banc(brut[1:])
     p = argparse.ArgumentParser(prog="jarvis", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("-v", "--verbeux", action="store_true")
     sous = p.add_subparsers(dest="commande")

@@ -115,9 +115,15 @@ def noter(cas: dict, appels: list[dict], texte: str) -> Verdict:
         return v
 
     if not appels:
+        # Certains cas acceptent une réponse directe juste (ex. un calcul simple fait de tête)
+        contient_un = cas.get("reponse_contient_un", [])
+        if cas.get("tolerer_sans_outil") and any(m in texte for m in contient_un):
+            v.reussi = True
+            return v
         v.motif = "aucun appel d'outil"
         return v
-    conformes = [a for a in appels if any(appel_conforme(a, att) for att in attendus)]
+    tolerés = set(cas.get("tolerer_autres", []))
+    conformes = [a for a in appels if any(appel_conforme(a, att) for att in attendus) or a.get("outil") in tolerés]
     en_trop = [a for a in appels if a not in conformes]
     if en_trop:
         v.motif = "appel(s) incorrect(s) : " + "; ".join(json.dumps(a, ensure_ascii=False) for a in en_trop)
