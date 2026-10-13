@@ -115,10 +115,7 @@ class LirePageWeb(Outil):
         r = await ctx.http("GET", url, headers={"Accept-Language": "fr-FR,fr;q=0.9,en;q=0.6"})
         if r.status_code in (403, 429) and _playwright_disponible():
             titre, texte = await rendre_page(url)  # certains sites refusent les clients non navigateurs
-            return Resultat(True, f"{titre}
-{url}
-
-{texte}", contenu_externe=True)
+            return Resultat(True, f"{titre}\n{url}\n\n{texte}", contenu_externe=True)
         if r.status_code >= 400:
             return Resultat.echec(f"La page répond {r.status_code}.")
         type_contenu = r.headers.get("content-type", "")
