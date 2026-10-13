@@ -8,8 +8,8 @@ node_modules/
 dist/
 
 # Modèles, binaires et résultats bruts : hors du dépôt (volumineux ou personnels)
-modeles/
-outils/
+/modeles/
+/outils/
 *.gguf
 *.onnx
 *.wav
