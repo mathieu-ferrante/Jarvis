@@ -9,9 +9,10 @@ sort du PC à cause de Jarvis, aucun appel à une IA dans le cloud.
 
 ## État
 
-Lots J0 à J11 **codés et testés sur le poste de développement** (145 tests automatisés) ;
+Lots J0 à J18 **codés et testés sur le poste de développement** (185 tests automatisés) ;
 **aucun n'a encore été validé sur le PC de jeu** : performances, voix et modèles définitifs
-se mesurent là-bas (voir A_VALIDER.md). Lots J12 à J18 : en cours.
+se mesurent là-bas (voir A_VALIDER.md). L'appli Android n'a jamais été compilée et l'agent
+Mac n'a jamais tourné sur un Mac.
 
 ## Ce que fait Jarvis
 
@@ -26,8 +27,13 @@ se mesurent là-bas (voir A_VALIDER.md). Lots J12 à J18 : en cours.
   agenda, Discord, Postgame, dépôts git, Home Assistant.
 - **Mémoire** : se souvient de Mathieu (faits datés et sourcés, appris aussi des conversations),
   recherche par le sens, historique, oubli sur demande, sauvegarde chiffrée.
-- **Initiative** : briefing du matin, suggestions discrètes, rappels, tâches de fond notifiées.
-- **Partout** : interface web installable (PWA) sur le PC, le téléphone et le Mac, via Tailscale.
+- **Initiative** : briefing du matin, suggestions (silencieux / discret / actif), rappels,
+  tâches de fond notifiées, coach en direct pendant les parties (via Postgame).
+- **Partout** : interface web (PWA), appli Android native et agent macOS, via Tailscale ;
+  notifications sur l'appareil utilisé, conversation commune, outils de chaque appareil
+  pilotables depuis les autres, rappels à un lieu ou à la fin d'une partie.
+- **Apprend** : mot de réveil entraîné sur la voix de Mathieu, empreinte vocale, habitudes et
+  souvenirs proposés avant d'être retenus, tâches de fond reprises après redémarrage.
 - **Mode jeu** : détecte la partie, libère la VRAM, passe en silence.
 
 ## Sécurité
@@ -50,7 +56,9 @@ jarvis.cmd --fenetre
 
 Commandes utiles : `python -m jarvis outils` (liste des outils), `python -m jarvis banc`
 (performance et batterie de commandes), `python -m jarvis secrets definir <nom>`,
-`python -m jarvis sauvegarde --cle`, `python -m jarvis appareils`.
+`python -m jarvis sauvegarde --cle`, `python -m jarvis appareils`,
+`python -m jarvis enroler-voix`, `python -m jarvis entrainer-reveil`,
+`python -m jarvis evaluer <modèle>`.
 
 Configuration : `%LOCALAPPDATA%\Jarvis\jarvis.toml` (créé au premier lancement, commenté).
 
@@ -83,6 +91,8 @@ src/jarvis/
   jeu.py, initiative.py mode jeu ; briefing et suggestions
   banc.py               banc de performance et batterie de commandes
   diagnostic/           lot J0
+  mac/                  agent macOS (barre des menus, outils, secours local)
+android/                application Android (Kotlin, Compose)
 web/                    interface PWA (React + TypeScript)
 tests/                  tests automatisés
 ```

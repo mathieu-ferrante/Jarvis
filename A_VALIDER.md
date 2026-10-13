@@ -133,6 +133,67 @@ Dans `jarvis.toml` section `[integrations]`, puis les secrets avec `python -m ja
   autorisé est annoncé, une suggestion ne l'est pas.
 - Postgame : dès que son API locale tourne, « Comment était ma dernière session de DM ? ».
 
+## V12-1 — Multi-appareils (J12)
+
+- PC au clavier : un rappel arrive sur le PC. PC inactif 10 min et téléphone utilisé : il
+  arrive sur le téléphone ; non lu au bout d'un moment : relayé aux autres appareils.
+- Depuis le téléphone : « Envoie-moi le fichier C:\Temp\test.pdf » → lien valable une fois.
+- Une confirmation demandée depuis le téléphone ne peut pas être acceptée depuis le Mac.
+
+## V13-1 — Application Android (J13) · **jamais compilée**
+
+Suivre [android/README.md](android/README.md) (Android Studio, clé de signature hors dépôt).
+- **Attendu** : appairage, notifications téléphone verrouillé, appui pour parler, tuile,
+  confirmation par empreinte, « fais sonner mon téléphone » depuis le PC.
+- **À me renvoyer** : les erreurs de compilation éventuelles (copier-coller), la mémoire du
+  POCO (8 ou 12 Go) et l'autonomie avec le mot de réveil actif sur une journée.
+
+## V14-1 — Mac (J14) · **jamais lancé sur un Mac**
+
+```
+git clone https://github.com/mathieu-ferrante/Jarvis && cd Jarvis && sh mac/installer.sh
+```
+- **Attendu** : icône dans la barre des menus ; ⌥⌘J pour parler ; depuis le PC, « ouvre Notes
+  sur le Mac » ; PC éteint : « mode secours » annoncé et réponse locale.
+- **À me renvoyer** : erreurs éventuelles, permissions macOS demandées.
+
+## V15-1 — Contexte (J15)
+
+- Activer la position dans l'appli Android, puis « Rappelle-moi d'acheter du pain quand
+  j'arrive au Carrefour de <ta ville> » → notification en arrivant.
+- « Rappelle-moi de m'étirer à la fin de ma partie » → rappel à la sortie du jeu.
+- Commencer une conversation au PC, la poursuivre au téléphone : Jarvis a le fil.
+
+## V16-1 — Voix (J16)
+
+```
+.venv\Scripts\python -m jarvis enroler-voix
+.venv\Scripts\python -m jarvis entrainer-reveil
+```
+- `enroler-voix` : dire « Jarvis » et lire les phrases affichées (quelques minutes) ; il enregistre ta voix pour le mot
+  de réveil et ton empreinte vocale (chiffrée dans le coffre).
+- `entrainer-reveil` : quelques minutes (durée à noter) ; **attendu** : rappel ≥ 0,9 sur « Jarvis »,
+  faux positifs bas sur les pièges ; `jarvis_perso.onnx` est pris au redémarrage.
+- Interrompre Jarvis par « Jarvis » **sans casque**, haut-parleurs à volume normal.
+- Demander à quelqu'un d'autre de répondre « oui » à une confirmation : refusé.
+- **À me renvoyer** : le bilan affiché par `entrainer-reveil` ; faux déclenchements sur une soirée.
+
+## V17-1 — Intelligence (J17)
+
+- `python -m jarvis banc` : taux de la batterie de 200 commandes ≥ 0,90.
+- `python -m jarvis evaluer gemma-4-12b` (ou un autre candidat) : recommandation affichée.
+- « Prépare-moi un résumé de mes mails de la semaine dans un fichier » → tâche de fond avec
+  compte rendu ; redémarrer Jarvis au milieu : elle reprend.
+- Interface → Mémoire → Propositions : accepter ou refuser ce que Jarvis a déduit.
+- Expérimental : « Coche l'option … dans les réglages de … » → pilotage de l'écran, confirmé.
+
+## V18-1 — Initiative (J18)
+
+- « Jarvis, sois plus discret » ou interface → Initiative : silencieux, discret, actif.
+- En mode actif, une habitude acceptée (ex. Spotify vers 21 h) est proposée à l'heure.
+- Pendant une partie de LoL ou CS2 avec Postgame lancé : « Un conseil ? » → conseil tiré de
+  l'état en direct (si Postgame n'expose pas encore `/api/<jeu>/live`, Jarvis le dit).
+
 ---
 
 ## Valeurs provisoires

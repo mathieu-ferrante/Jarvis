@@ -27,15 +27,15 @@ validé sur le PC de jeu** · `[ ]` à faire.
 | J9 — Coach de jeux et projets | `[~]` | V9-1 : mode jeu dans CS2 ; Postgame dès que son API existe |
 | J10 — Maison connectée | `[~]` | Seulement si Home Assistant est installé |
 | J11 — Optimisation du socle | `[~]` | V11-1 : banc de performance sur le PC de jeu |
-| J12 — Socle multi-appareils | `[ ]` | |
-| J13 — Application Android | `[ ]` | |
-| J14 — Mac | `[ ]` | |
-| J15 — Contexte et continuité | `[ ]` | |
-| J16 — Voix maximum | `[ ]` | |
-| J17 — Intelligence maximum | `[ ]` | |
-| J18 — Initiative maximum | `[ ]` | |
+| J12 — Socle multi-appareils | `[~]` | V12-1 : notifications routées, outils distants |
+| J13 — Application Android | `[~]` | **Jamais compilée** (Gradle bloqué) : V13-1 compiler et installer sur le POCO |
+| J14 — Mac | `[~]` | **Jamais lancé sur un Mac** : V14-1 |
+| J15 — Contexte et continuité | `[~]` | V15-1 : rappel en arrivant quelque part |
+| J16 — Voix maximum | `[~]` | V16-1 : enrôlement, réveil perso, écho, locuteur avec la vraie voix |
+| J17 — Intelligence maximum | `[~]` | V17-1 : batterie de 200 avec le vrai modèle, `evaluer` |
+| J18 — Initiative maximum | `[~]` | V18-1 : proactivité, coach en direct (Postgame) |
 
-## Ce qui est en place (poste de développement : 145 tests verts)
+## Ce qui est en place (poste de développement : 185 tests verts)
 
 - **J0** : diagnostic complet (`diagnostic.cmd`) : modèles (débit, latence, batterie d'outils,
   français, vision), transcription, voix, mot de réveil, micro ; décisions par règles explicites.
@@ -59,6 +59,23 @@ validé sur le PC de jeu** · `[ ]` à faire.
 - **J10** : Home Assistant (actions courantes annoncées, sécurité toujours confirmée).
 - **J11** : banc `python -m jarvis banc`, chemin rapide des commandes fréquentes, deux
   emplacements llama-server, cache des plongements, transcription anticipée.
+- **J12** : présence (PC actif ou en jeu, sinon dernier appareil), notifications routées puis
+  relayées si non lues, outils distants déclarés par les appareils (mêmes permissions),
+  confirmation réservée à l'appareil d'origine ou au PC, envoi de fichiers par lien unique.
+- **J13** : appli Android Kotlin/Compose (appairage, WebSocket en service de premier plan,
+  appui pour parler, tuile, empreinte, outils du téléphone, mot de réveil ONNX, file hors
+  connexion, guide HyperOS). **Non compilée.**
+- **J14** : agent macOS (`python -m jarvis.mac`) : barre des menus, ⌥⌘J, outils du Mac,
+  secours local Metal si le PC est injoignable. **Non testé sur un Mac.**
+- **J15** : rappels à un lieu (géocodage OpenStreetMap, position du téléphone sur accord),
+  à l'usage d'un appareil, à la fin d'une partie ; conversation commune à tous les appareils.
+- **J16** : mot de réveil « Jarvis » personnalisé (`enroler-voix`, `entrainer-reveil`),
+  empreinte du locuteur (WeSpeaker), annulation d'écho (25 à 40 dB sur le poste de dev).
+- **J17** : batterie de 200 commandes, tâches de fond planifiées et reprises après
+  redémarrage, personnalisation par exemples (D21), souvenirs et habitudes proposés (D22),
+  `python -m jarvis evaluer <modèle>`, agent de pilotage de l'écran (expérimental).
+- **J18** : proactivité réglable (silencieux, discret, actif) à la voix et dans l'interface,
+  habitudes acceptées proposées à l'heure en mode actif, coach en direct via Postgame.
 
 ## Décisions
 
@@ -105,7 +122,9 @@ validé sur le PC de jeu** · `[ ]` à faire.
 
 ## Points ouverts
 
-- **Batterie de commandes** : 60 commandes provisoires écrites par Claude ; la liste réelle de
-  Mathieu doit la remplacer et l'étendre à 200 (IA-01).
-- **API Postgame** : pas encore définie ; Jarvis la découvre par `/openapi.json`.
+- **Batterie de commandes** : 200 commandes provisoires écrites par Claude ; la liste réelle de
+  Mathieu doit les compléter ou les remplacer (IA-01).
+- **Coach en direct** : suppose une route `/api/{cs2|lol}/live` de Postgame ; si elle n'existe
+  pas encore, l'outil le dit honnêtement.
+- **Mémoire du POCO M7 Pro** (8 ou 12 Go) : décide si le mot de réveil reste actif en continu.
 - **Wikipédia** refuse les requêtes Python depuis le poste de dev (403) : à vérifier au PC.
