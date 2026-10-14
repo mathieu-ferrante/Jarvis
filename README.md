@@ -9,7 +9,7 @@ sort du PC à cause de Jarvis, aucun appel à une IA dans le cloud.
 
 ## État
 
-Lots J0 à J18 **codés et testés sur le poste de développement** (185 tests automatisés) ;
+Lots J0 à J18 **codés et testés sur le poste de développement** (190 tests automatisés) ;
 **aucun n'a encore été validé sur le PC de jeu** : performances, voix et modèles définitifs
 se mesurent là-bas (voir A_VALIDER.md). L'appli Android n'a jamais été compilée et l'agent
 Mac n'a jamais tourné sur un Mac.
@@ -58,7 +58,8 @@ Commandes utiles : `python -m jarvis outils` (liste des outils), `python -m jarv
 (performance et batterie de commandes), `python -m jarvis secrets definir <nom>`,
 `python -m jarvis sauvegarde --cle`, `python -m jarvis appareils`,
 `python -m jarvis enroler-voix`, `python -m jarvis entrainer-reveil`,
-`python -m jarvis evaluer <modèle>`.
+`python -m jarvis evaluer <modèle>`,
+`python -m jarvis verifier` (contrôle de l'installation, rapport à renvoyer).
 
 Configuration : `%LOCALAPPDATA%\Jarvis\jarvis.toml` (créé au premier lancement, commenté).
 

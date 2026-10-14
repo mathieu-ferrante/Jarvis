@@ -12,6 +12,16 @@ dans l'ordre conseillé.
 2. Python 3.13 : `winget install Python.Python.3.13` (si absent).
 3. Pilote AMD Adrenalin à jour (il fournit Vulkan).
 
+## V0-0 — Vérification de l'installation (après `installer.cmd`, puis à chaque problème)
+
+```
+.venv\Scripts\python -m jarvis verifier
+```
+- Contrôle Python, dépendances, configuration, modèles présents, **carte vue par llama-server
+  (Vulkan)**, micro, ports, coffre DPAPI, Tailscale, mot de réveil perso, disque, garde réseau.
+- **Attendu** : aucune ❌ ; la ligne llama-server doit nommer la RX 6750 XT.
+- **À me renvoyer** : `rapport_verification.md` (dossier des données, sans aucun secret).
+
 ## V0-1 — Diagnostic (lot J0) · **prioritaire : il tranche les modèles**
 
 **Durée** : 10 min de présence (dont 2 au micro), puis 1 à 2 h automatiques. ~45 Go sur un NVMe.

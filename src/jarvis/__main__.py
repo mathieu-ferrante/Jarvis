@@ -10,6 +10,7 @@ Commandes :
   secrets               gère le coffre (mail, Discord, Spotify, Home Assistant…)
   sauvegarde            sauvegarde chiffrée maintenant ; --cle affiche la clé de secours
   outils                liste les outils et leur niveau de permission
+  verifier              contrôle l'installation et écrit un rapport à renvoyer (--sans-gpu)
 """
 
 from __future__ import annotations
@@ -258,6 +259,10 @@ def main(argv: list[str] | None = None) -> int:
         from jarvis.banc import evaluer
 
         return evaluer(brut[1])
+    if brut[:1] == ["verifier"]:
+        from jarvis.verification import main as verifier
+
+        return verifier(brut[1:])
     if brut and brut[0] in ("diagnostic", "banc"):  # options transmises telles quelles au sous-programme
         if brut[0] == "diagnostic":
             from jarvis.diagnostic.__main__ import main as diagnostic
