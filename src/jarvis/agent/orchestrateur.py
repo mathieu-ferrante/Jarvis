@@ -208,7 +208,8 @@ class Orchestrateur:
         if commande is not None:
             tour.actions_rapides = True
             resultat = await self.executer_appel(AppelOutil("rapide", commande.outil, dict(commande.args)), tour)
-            texte_final = (commande.gabarit.format(message=resultat.message) if resultat.ok
+            message = re.sub(r"\s*\(ISO [^)]*\)", "", resultat.message)  # le format ISO sert au modèle, pas à l'oral
+            texte_final = (commande.gabarit.format(message=message) if resultat.ok
                            else f"Je n'ai pas pu : {resultat.message}")
             yield texte_final
             self._terminer(tour, texte, texte_final, [{"role": "user", "content": texte},

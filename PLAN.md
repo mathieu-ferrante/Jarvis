@@ -35,7 +35,7 @@ validé sur le PC de jeu** · `[ ]` à faire.
 | J17 — Intelligence maximum | `[~]` | V17-1 : batterie de 200 avec le vrai modèle, `evaluer` |
 | J18 — Initiative maximum | `[~]` | V18-1 : proactivité, coach en direct (Postgame) |
 
-## Ce qui est en place (poste de développement : 206 tests verts)
+## Ce qui est en place (poste de développement : 207 tests verts)
 
 - **J0** : diagnostic complet (`diagnostic.cmd`) : modèles (débit, latence, batterie d'outils,
   français, vision), transcription, voix, mot de réveil, micro ; décisions par règles explicites.

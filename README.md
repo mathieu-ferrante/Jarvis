@@ -9,7 +9,7 @@ sort du PC à cause de Jarvis, aucun appel à une IA dans le cloud.
 
 ## État
 
-Lots J0 à J18 **codés et testés sur le poste de développement** (206 tests automatisés) ;
+Lots J0 à J18 **codés et testés sur le poste de développement** (207 tests automatisés) ;
 **aucun n'a encore été validé sur le PC de jeu** : performances, voix et modèles définitifs
 se mesurent là-bas (voir A_VALIDER.md). L'appli Android n'a jamais été compilée et l'agent
 Mac n'a jamais tourné sur un Mac.

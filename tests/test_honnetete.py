@@ -97,3 +97,13 @@ def test_bureau_reel_de_windows(monkeypatch):
     assert fichiers.resoudre("Bureau/Essai") == Path(r"C:\Users\m\OneDrive\Bureau\Essai")
     assert fichiers.resoudre("téléchargements") == Path(r"C:\Users\m\Downloads")
     assert fichiers.dossier_connu("Desktop").name == "Bureau"
+
+
+def test_rappel_rapide_sans_format_iso_a_l_oral(tmp_path):
+    from jarvis.outils.rappels import CreerRappel
+    from jarvis.rappels import ServiceRappels
+
+    o = orchestrateur(tmp_path, [], [CreerRappel()])
+    o.services["rappels"] = ServiceRappels(tmp_path / "r.sqlite")
+    reponse = asyncio.run(o.repondre_texte("Rappelle-moi d'appeler maman demain à 18h", canal="voix"))
+    assert "Appeler maman" in reponse and "ISO" not in reponse

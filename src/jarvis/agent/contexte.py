@@ -40,7 +40,9 @@ def contexte_variable(canal: str, ville: str = "", en_jeu: bool = False, souveni
         morceaux.append(f"Mathieu est à {ville}")
     if en_jeu:
         morceaux.append("Mathieu est en pleine partie : sois très bref")
-    texte = "[Contexte : " + " ; ".join(morceaux) + "]"
+    # « à ne mentionner que si utile » : sans cette précision, un petit modèle récite la date et
+    # la ville à chaque réponse (« Merci » → « Bonjour, je suis à Marseille », essai du 14/10)
+    texte = "[Contexte, à ne mentionner que si la demande s'y rapporte : " + " ; ".join(morceaux) + "]"
     if souvenirs:
         texte += "\n[Ce que tu sais de Mathieu et qui peut servir : " + " | ".join(souvenirs) + "]"
     return texte
