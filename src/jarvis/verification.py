@@ -111,6 +111,21 @@ def gpu_vulkan(c, executer=subprocess.run) -> Controle:
     return Controle(OK if amd else ATTENTION, f"llama-server ({c.llm.backend})", " | ".join(appareils))
 
 
+def contexte_modele(c) -> Controle:
+    """Le préfixe fixe (consignes + schémas de tous les outils) doit laisser de la place à la conversation."""
+    from jarvis.agent import budget
+    from jarvis.agent.contexte import CONSIGNES
+    from jarvis.outils.registre import Registre
+
+    schemas = Registre().charger_tout().schemas()
+    fixe = budget.tokens_outils(schemas) + budget.tokens(CONSIGNES)
+    detail = f"{c.llm.contexte} tokens par emplacement, préfixe ≈ {fixe} ({len(schemas)} outils)"
+    if fixe + budget.MARGE_MINIMALE > c.llm.contexte:
+        return Controle(ATTENTION, "Contexte du modèle", detail + " → outils essentiels seulement : passer "
+                        "llm.contexte à 16384 ou plus dans jarvis.toml")
+    return Controle(OK, "Contexte du modèle", detail)
+
+
 def micro(c) -> Controle:
     try:
         import sounddevice as sd
@@ -201,6 +216,7 @@ def tout_verifier(gpu: bool = True) -> list[Controle]:
     resultats.append(ctrl)
     if c is not None:
         resultats.append(fichiers_modeles(c))
+        resultats.append(contexte_modele(c))
         if gpu:
             resultats.append(gpu_vulkan(c))
         resultats.append(micro(c))

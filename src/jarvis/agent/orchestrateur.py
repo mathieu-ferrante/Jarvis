@@ -15,7 +15,9 @@ import re
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
 
-from jarvis.agent import contexte, routeur
+import httpx
+
+from jarvis.agent import budget, contexte, routeur
 from jarvis.evenements import Bus
 from jarvis.llm.client import AppelOutil, ClientLLM
 from jarvis.outils.base import Contexte, Niveau, Resultat
@@ -31,6 +33,65 @@ COMMANDE_ARRET = re.compile(
 )
 TOURS_GARDES = 8
 DELAI_OUTIL_S = 120
+
+# Garde d'honnêteté (BRN-04) : une demande d'action, une réponse qui affirme l'avoir faite, et
+# aucun outil appelé → le modèle a inventé l'action. On le relance une fois, puis on se corrige.
+DEMANDE_ACTION = re.compile(
+    r"^\s*(?:h?[ée]y?\s+)?(?:jarvis\s*[,.!]?\s*)?(?:peux-tu |tu peux |pourrais-tu )?"
+    r"(rappelle|mets|met|lance|ouvre|ferme|envoie|cr[ée]e|ajoute|retiens|note|programme|active|d[ée]sactive|"
+    r"monte|baisse|coupe|supprime|d[ée]place|copie|renomme|r[èe]gle|allume|[ée]teins|joue|passe|planifie)",
+    re.I)
+AFFIRME_ACTION = re.compile(
+    r"\b(c'est fait|c'est not[ée]|c'est programm[ée]|je (vais|viens de) (vous |te )?\w+|j'ai (bien )?\w+[ée]e?s?\b|"
+    r"(est|sont) (maintenant|d[ée]sormais) |rappel (cr[ée]{2}|ajout[ée]|programm[ée])|c'est parti|voil[àa])", re.I)
+RELANCE_HONNETETE = ("Tu n'as appelé AUCUN outil : l'action n'est PAS faite, ne prétends pas le contraire. "
+                     "Appelle maintenant l'outil adapté, ou dis franchement à Mathieu que tu ne peux pas le faire.")
+
+
+BALISE_INTERNE = re.compile(r"</?\s*donnees_externes\s*>\s*", re.I)
+
+
+class FiltreBalises:
+    """Retire du flux les balises internes que le modèle recopie parfois (« <donnees_externes> ») :
+    elles ne doivent être ni lues à voix haute ni affichées. Retient le texte dès un « < » jusqu'à
+    savoir s'il s'agit d'une balise (au plus 24 caractères)."""
+
+    def __init__(self):
+        self.tampon = ""
+
+    def ajouter(self, morceau: str) -> str:
+        self.tampon += morceau
+        sortie = ""
+        while self.tampon:
+            i = self.tampon.find("<")
+            if i < 0:
+                sortie, self.tampon = sortie + self.tampon, ""
+                break
+            sortie, self.tampon = sortie + self.tampon[:i], self.tampon[i:]
+            fin, autre = self.tampon.find(">"), self.tampon.find("<", 1)
+            if autre > 0 and (fin < 0 or autre < fin):  # « a<b … <balise> » : le 1er « < » n'ouvre rien
+                sortie, self.tampon = sortie + self.tampon[:autre], self.tampon[autre:]
+                continue
+            if fin < 0:
+                if len(self.tampon) < 24:
+                    break  # balise peut-être incomplète : on attend la suite
+                sortie, self.tampon = sortie + self.tampon[0], self.tampon[1:]
+                continue
+            balise = self.tampon[:fin + 1]
+            self.tampon = self.tampon[fin + 1:]
+            if BALISE_INTERNE.fullmatch(balise.strip()):
+                self.tampon = self.tampon.lstrip("\n")
+            else:
+                sortie += balise
+        return sortie
+
+    def vider(self) -> str:
+        reste, self.tampon = self.tampon, ""
+        return reste
+
+
+def action_inventee(demande: str, reponse: str, actions: list[dict]) -> bool:
+    return not actions and bool(DEMANDE_ACTION.match(demande)) and bool(AFFIRME_ACTION.search(reponse))
 
 
 def valider_arguments(schema: dict, args: dict) -> str | None:
@@ -86,6 +147,7 @@ class Tour:
     actions: list[dict] = field(default_factory=list)
     signatures: set = field(default_factory=set)
     actions_rapides: bool = False
+    relance_honnetete: bool = False
 
 
 class Orchestrateur:
@@ -163,7 +225,10 @@ class Orchestrateur:
         messages = [{"role": "system", "content": self.consignes}, *historique[-2 * TOURS_GARDES:],
                     {"role": "user", "content": f"{prefixe}\n{texte}"}]
         debut_tour = len(messages) - 1
-        schemas = self.registre.schemas()
+        schemas = self.schemas_actifs()
+        capacite = self.capacite_contexte()
+        reserve = 4096 if reflexion else 1024  # = max_tokens de la réponse
+        contexte_reduit = False
         texte_final = ""
         self.bus.publier("demande", texte=texte, canal=canal, conversation=conversation)
 
@@ -173,26 +238,71 @@ class Orchestrateur:
                 break
             reponse = None
             texte_etape = ""
+            repetition = False
+            filtre = FiltreBalises()
+            debut_tour -= budget.ajuster(messages, schemas, capacite, reserve, debut_tour)
+            if budget.place_restante(messages, schemas, capacite) < reserve:
+                budget.raccourcir_resultats(messages, debut_tour)
+            place = budget.place_restante(messages, schemas, capacite) - 64
+            if reflexion and place < 3000:
+                reflexion, reserve = False, 1024  # pas la place de réfléchir : réponse directe
+            if place < 200:
+                fin = " Cette demande dépasse ma mémoire de travail : je m'arrête là."
+                texte_final += fin
+                yield fin
+                break
             try:
-                async for evt in client.diffuser(messages, schemas or None, reflexion=reflexion):
+                async for evt in client.diffuser(messages, schemas or None, max_tokens=min(reserve, place),
+                                                 reflexion=reflexion):
                     if self.arret.is_set():
                         break
                     if evt.type == "pensee":
                         self.bus.publier("pensee", texte=evt.texte, conversation=conversation)
                     elif evt.type == "texte":
-                        texte_etape += evt.texte
-                        yield evt.texte
+                        morceau = filtre.ajouter(evt.texte)
+                        if not morceau:
+                            continue
+                        texte_etape += morceau
+                        yield morceau
+                        if (coupe := budget.tronquer_repetition(texte_etape)) is not None:
+                            # Le modèle tourne en boucle : on coupe le flux (llama-server s'arrête aussi)
+                            log.warning("Répétition en boucle coupée : %r", coupe[-80:])
+                            texte_etape, repetition = coupe, True
+                            break
                     else:
                         reponse = evt.reponse
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 400 and not contexte_reduit and debut_tour > 1 and not texte_etape:
+                    # Contexte dépassé malgré l'estimation : on repart sans l'historique, une fois
+                    log.warning("Requête refusée par llama-server (400) : nouvel essai sans historique")
+                    del messages[1:debut_tour]
+                    debut_tour, contexte_reduit = 1, True
+                    continue
+                log.exception("Modèle indisponible")
+                yield f"Je n'arrive pas à joindre mon modèle de langage ({type(e).__name__})."
+                break
             except Exception as e:  # noqa: BLE001
                 log.exception("Modèle indisponible")
                 yield f"Je n'arrive pas à joindre mon modèle de langage ({type(e).__name__})."
+                break
+            if (reste := filtre.vider()) and not repetition:
+                texte_etape += reste
+                yield reste
+            if repetition:
+                texte_final += texte_etape
+                messages.append({"role": "assistant", "content": texte_etape})
                 break
             if reponse is None:
                 break
             texte_final += texte_etape
             messages.append(reponse.message_assistant())
             if not reponse.appels:
+                if not tour.relance_honnetete and action_inventee(texte, texte_final, tour.actions):
+                    tour.relance_honnetete = True
+                    log.warning("Action annoncée sans outil, relance du modèle : %r", texte_final[:120])
+                    messages.append({"role": "user", "content": RELANCE_HONNETETE})
+                    yield " "
+                    continue
                 break
             if texte_etape and not texte_etape.endswith((" ", "\n")):
                 yield " "
@@ -211,6 +321,11 @@ class Orchestrateur:
             texte_final += fin
             yield fin
 
+        if tour.relance_honnetete and not any(a["ok"] for a in tour.actions) and not self.arret.is_set():
+            correction = " Correction : je ne l'ai pas fait."
+            texte_final += correction
+            yield correction
+
         if not texte_final.strip() and tour.actions:
             resume = "C'est fait : " + ", ".join(a["description"] for a in tour.actions if a["ok"]) + "."
             if not any(a["ok"] for a in tour.actions):
@@ -226,6 +341,8 @@ class Orchestrateur:
         # Historique compact : demande + réponse, et les échanges d'outils tronqués
         for message in messages[debut_tour:]:
             copie = dict(message)
+            if copie.get("content") == RELANCE_HONNETETE:
+                continue  # consigne interne : pas dans l'historique
             if copie.get("role") == "user":
                 copie["content"] = texte
             if copie.get("role") == "tool":
@@ -249,6 +366,27 @@ class Orchestrateur:
                 self._taches_fond.add(tache)
                 tache.add_done_callback(self._taches_fond.discard)
         self.bus.publier("reponse", texte=texte_final, conversation=conversation, actions=tour.actions)
+
+    def schemas_actifs(self) -> list[dict]:
+        """Tous les outils ; en jeu, seulement ceux utiles en partie (modèle sur CPU, petit contexte) ;
+        les outils essentiels si le contexte configuré est trop petit pour tous (stable : reste en cache)."""
+        if self.en_jeu():
+            return self.registre.schemas(sorted(budget.OUTILS_JEU))
+        tous = self.registre.schemas()
+        fixe = budget.tokens_outils(tous) + budget.tokens(self.consignes)
+        if fixe + budget.MARGE_MINIMALE > self.capacite_contexte():
+            if not getattr(self, "_repli_signale", False):
+                self._repli_signale = True
+                log.warning("Contexte de %d tokens trop petit pour les %d outils : outils essentiels seulement "
+                            "(augmenter llm.contexte)", self.capacite_contexte(), len(tous))
+            return self.registre.schemas(sorted(budget.OUTILS_ESSENTIELS))
+        return tous
+
+    def capacite_contexte(self) -> int:
+        """Tokens d'un emplacement llama-server (le mode jeu démarre le modèle CPU avec 8 192)."""
+        if self.en_jeu():
+            return 8192
+        return getattr(getattr(self.config, "llm", None), "contexte", 16384)
 
     def _commande_rapide(self, texte: str):
         """Chemin rapide : seulement si l'outil visé existe et que la cible est connue."""

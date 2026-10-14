@@ -8,6 +8,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 
 NOMBRES = {
     "un": 1, "une": 1, "deux": 2, "trois": 3, "quatre": 4, "cinq": 5, "six": 6, "sept": 7, "huit": 8, "neuf": 9,
@@ -86,8 +87,103 @@ def normaliser(texte: str) -> str:
     return re.sub(r"\s+", " ", t)
 
 
-def reconnaitre(texte: str, application_connue=None, routine_connue=None) -> Commande | None:
+# --- Rappels et souvenirs : le texte libre garde ses accents ---------------------------------
+
+_PREFIXE = re.compile(r"^\s*(h?[ée]y?\s+)?jarvis\s*[,!.]?\s*", re.I)
+_POLITESSE = re.compile(r"\s*(,?\s*s'il te pla[iî]t|,?\s*stp|,?\s*merci)\s*[.!?]*$", re.I)
+_RAPPEL_DANS = re.compile(r"^rappelle[- ]moi (de |d'|qu'|que )?(?P<quoi>.+?),? dans (?P<n>\d+|[a-zé\- ]+?) "
+                          r"(?P<u>secondes?|minutes?|min|heures?|h)$", re.I)
+_RAPPEL_A = re.compile(r"^rappelle[- ]moi (de |d'|qu'|que )?(?P<quoi>.+?),? (?P<jour>demain |ce soir |aujourd'hui )?"
+                       r"(?:à|a) (?P<h>\d{1,2}) ?(?:h|heures?|:) ?(?P<m>\d{2})?$", re.I)
+_RAPPEL_DEBUT = re.compile(r"^rappelle[- ]moi (?P<jour>demain |ce soir )?(?:à|a) (?P<h>\d{1,2}) ?(?:h|heures?|:) ?"
+                           r"(?P<m>\d{2})? (de |d'|qu'|que )(?P<quoi>.+)$", re.I)
+_RETIENS = re.compile(r"^(retiens|souviens-toi|rappelle-toi|note|n'oublie pas) (bien )?(que |qu')(?P<fait>.+)$", re.I)
+
+# Verbes irréguliers à la 1re personne → 3e personne (« je suis » → « Mathieu est »)
+_IRREGULIERS = {"suis": "est", "ai": "a", "vais": "va", "fais": "fait", "peux": "peut", "veux": "veut",
+                "dois": "doit", "sais": "sait", "prends": "prend", "bois": "boit", "vis": "vit", "dors": "dort",
+                "sors": "sort", "pars": "part", "finis": "finit", "lis": "lit", "écris": "écrit", "crois": "croit",
+                "connais": "connaît", "mets": "met", "viens": "vient", "tiens": "tient", "préfère": "préfère"}
+_POSSESSIFS = {"mon": "son", "ma": "sa", "mes": "ses", "moi": "lui"}
+
+
+def _texte_libre(texte: str) -> str:
+    t = _POLITESSE.sub("", _PREFIXE.sub("", texte.strip())).strip().rstrip(" .!")
+    return re.sub(r"\s+", " ", t.replace("’", "'"))
+
+
+def a_la_troisieme_personne(fait: str) -> str:
+    """« je joue à CS2 » → « Mathieu joue à CS2 » ; formule non convertible → citation fidèle."""
+    m = re.match(r"^(je |j')(?P<verbe>[\wéèêàç]+)(?P<reste>.*)$", fait, re.I)
+    if not m:
+        if re.search(r"\b(mon|ma|mes|moi|me|m\'|nous|notre|nos)\b", fait, re.I):
+            return f"Mathieu a dit : « {fait} »"  # « mon frère s'appelle Léo » : cité tel quel
+        return fait[0].upper() + fait[1:] if fait else fait
+    verbe = m.group("verbe").lower()
+    if verbe in ("me", "ne", "te", "le", "la", "les", "lui", "y", "en"):  # « je me lève » : citation
+        return f"Mathieu a dit : « {fait} »"
+    if verbe in _IRREGULIERS:
+        verbe = _IRREGULIERS[verbe]
+    elif not verbe.endswith("e"):  # conjugaison incertaine : on cite plutôt que d'écrire faux
+        return f"Mathieu a dit : « {fait} »"
+    reste = re.sub(r"\b(mon|ma|mes|moi)\b", lambda x: _POSSESSIFS[x.group(1).lower()], m.group("reste"), flags=re.I)
+    if re.search(r"\b(je|j\'|me|m\')\b", reste, re.I):
+        return f"Mathieu a dit : « {fait} »"
+    return f"Mathieu {verbe}{reste}"
+
+
+def _moment(jour: str | None, h: int, m: int, maintenant: datetime) -> datetime | None:
+    if not (0 <= h <= 23 and 0 <= m <= 59):
+        return None
+    moment = maintenant.replace(hour=h, minute=m, second=0, microsecond=0)
+    jour = (jour or "").strip().lower()
+    if jour == "demain":
+        moment += timedelta(days=1)
+    elif jour == "ce soir" and h < 12:
+        moment += timedelta(hours=12)  # « ce soir à 8 h » = 20 h
+    elif moment <= maintenant:
+        if not jour and h < 12 and (moment + timedelta(hours=12)) > maintenant:
+            moment += timedelta(hours=12)  # « à 8 h » dit à 15 h : 20 h, pas demain matin
+        else:
+            moment += timedelta(days=1)
+    return moment
+
+
+def _rappel(quoi: str, moment: datetime) -> Commande:
+    quoi = quoi.strip().rstrip(",")
+    return Commande("creer_rappel", {"texte": quoi[0].upper() + quoi[1:], "quand": moment.isoformat(timespec="seconds")},
+                    "{message}")
+
+
+def reconnaitre_libre(texte: str, maintenant: datetime | None = None) -> Commande | None:
+    maintenant = maintenant or datetime.now()
+    t = _texte_libre(texte)
+    if " puis " in t.lower() or re.search(r"\bet (lance|ouvre|mets|ferme|envoie)\b", t, re.I):
+        return None
+    if m := _RAPPEL_DANS.match(t):
+        n = lire_nombre(m.group("n"))
+        if not n:
+            return None
+        u = m.group("u").lower()
+        secondes = n * (1 if u.startswith("s") else 3600 if u.startswith("h") else 60)
+        return _rappel(m.group("quoi"), maintenant + timedelta(seconds=secondes))
+    for motif in (_RAPPEL_A, _RAPPEL_DEBUT):
+        if m := motif.match(t):
+            moment = _moment(m.group("jour"), int(m.group("h")), int(m.group("m") or 0), maintenant)
+            return _rappel(m.group("quoi"), moment) if moment else None
+    if m := _RETIENS.match(t):
+        fait = m.group("fait").strip()
+        if len(fait) < 4 or "?" in fait:
+            return None
+        return Commande("memoriser", {"fait": a_la_troisieme_personne(fait)}, "C'est noté.")
+    return None
+
+
+def reconnaitre(texte: str, application_connue=None, routine_connue=None,
+                maintenant: datetime | None = None) -> Commande | None:
     """Renvoie la commande si la phrase est reconnue avec certitude, sinon None."""
+    if (libre := reconnaitre_libre(texte, maintenant)) is not None:
+        return libre
     t = normaliser(texte)
     if not t or " et " in t or " puis " in t:  # plusieurs actions : au modèle
         return None

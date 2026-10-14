@@ -149,7 +149,7 @@ class Jarvis:
         """Remplit le cache du contexte fixe (consignes + outils) : la 1re vraie requête est rapide (PERF-06)."""
         messages = [{"role": "system", "content": self.orchestrateur.consignes}, {"role": "user", "content": "Bonjour."}]
         try:
-            await self.llm.discuter(messages, self.registre.schemas(), max_tokens=1)
+            await self.llm.discuter(messages, self.orchestrateur.schemas_actifs(), max_tokens=1)
         except Exception:  # noqa: BLE001
             log.warning("Préchauffage impossible")
 

@@ -75,7 +75,7 @@ async def batterie_commandes(client: ClientLLM, config) -> dict:
                         {"role": "user", "content": f"{prefixe}\n{cas['demande']}"}]
             reflexion = routeur.besoin_reflexion(cas["demande"], config.llm.reflexion)
             try:
-                r = await client.discuter(messages, schemas, max_tokens=600, reflexion=reflexion)
+                r = await client.discuter(messages, schemas, max_tokens=4096 if reflexion else 600, reflexion=reflexion)
                 appels, texte = [{"outil": a.nom, "args": a.args} for a in r.appels], r.texte
             except Exception as e:  # noqa: BLE001
                 verdicts.append(batterie.Verdict(cas["id"], cas.get("tags", []), False, motif=f"erreur : {e}"))

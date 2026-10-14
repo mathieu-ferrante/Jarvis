@@ -19,7 +19,8 @@ dans l'ordre conseillé.
 ```
 - Contrôle Python, dépendances, configuration, modèles présents, **carte vue par llama-server
   (Vulkan)**, micro, ports, coffre DPAPI, Tailscale, mot de réveil perso, disque, garde réseau.
-- **Attendu** : aucune ❌ ; la ligne llama-server doit nommer la RX 6750 XT.
+- **Attendu** : aucune ❌ ; la ligne llama-server doit nommer la RX 6750 XT ; la ligne « Contexte du
+  modèle » doit être ✅ (16 384 tokens par emplacement ou plus, sinon Jarvis n'utilise que 38 outils).
 - **À me renvoyer** : `rapport_verification.md` (dossier des données, sans aucun secret).
 
 ## V0-1 — Diagnostic (lot J0) · **prioritaire : il tranche les modèles**

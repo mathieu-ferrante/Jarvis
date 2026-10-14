@@ -24,7 +24,7 @@ def test_reflexion_activee_et_annoncee_a_l_oral(tmp_path):
     reponse = asyncio.run(o.repondre_texte("analyse ma dernière semaine de jeu", canal="voix"))
     assert reponse.startswith("Laisse-moi réfléchir.")
     assert o.llm.reflexions == [True]
-    o2 = orchestrateur(tmp_path, ["C'est fait."], [])
+    o2 = orchestrateur(tmp_path, ["Bien reçu."], [])
     asyncio.run(o2.repondre_texte("baisse le son", canal="voix"))
     assert o2.llm.reflexions == [False]
 

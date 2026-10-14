@@ -35,7 +35,7 @@ validé sur le PC de jeu** · `[ ]` à faire.
 | J17 — Intelligence maximum | `[~]` | V17-1 : batterie de 200 avec le vrai modèle, `evaluer` |
 | J18 — Initiative maximum | `[~]` | V18-1 : proactivité, coach en direct (Postgame) |
 
-## Ce qui est en place (poste de développement : 190 tests verts)
+## Ce qui est en place (poste de développement : 206 tests verts)
 
 - **J0** : diagnostic complet (`diagnostic.cmd`) : modèles (débit, latence, batterie d'outils,
   français, vision), transcription, voix, mot de réveil, micro ; décisions par règles explicites.
@@ -76,6 +76,12 @@ validé sur le PC de jeu** · `[ ]` à faire.
   `python -m jarvis evaluer <modèle>`, agent de pilotage de l'écran (expérimental).
 - **J18** : proactivité réglable (silencieux, discret, actif) à la voix et dans l'interface,
   habitudes acceptées proposées à l'heure en mode actif, coach en direct via Postgame.
+- **Essai réel de bout en bout (14/10, poste de dev, Qwen3.5 0.8B)** : Jarvis démarré pour de
+  vrai et interrogé par l'API. Bugs trouvés et corrigés : rappel annoncé sans être créé (garde
+  d'honnêteté), « Retiens que… » transformé en fermetures d'applications (commande rapide),
+  contexte saturé puis HTTP 400 en boucle (budget de contexte, D23), répétition sans fin
+  pendant 100 s (DRY + coupure), balises internes affichées, Bureau OneDrive ignoré, dossier
+  créé dans une arborescence inventée. `python -m jarvis verifier` ajouté.
 
 ## Décisions
 
@@ -102,6 +108,9 @@ validé sur le PC de jeu** · `[ ]` à faire.
 | D20 | 2026-10-13 | **Postgame : Jarvis lit les mesures locales et rédige lui-même les débriefs** ; l'appel à `/api/parties/{id}/debrief` est interdit dans le code | Postgame fait rédiger ses débriefs par Gemini : les déclencher depuis Jarvis ferait sortir des données à cause de Jarvis (règle absolue). Client aligné sur la vraie API (port 8765), vérifié contre le serveur de démonstration |
 | D21 | 2026-10-13 | **IA-03 : pas d'entraînement LoRA ; personnalisation par les consignes et la mémoire** (exemples réels de Mathieu tirés du journal, ajoutés aux consignes fixes chaque jour) | Vérifié en premier comme demandé : l'outil d'entraînement de llama.cpp est expérimental (réglage complet FP32, 24 Go pour 1 G de paramètres) et absent des binaires Windows ; ROCm ne gère pas officiellement la RX 6750 XT sous Windows ; la piste LoRA Vulkan (fork qvac) reste à surveiller |
 | D22 | 2026-10-13 | Souvenirs déduits et habitudes **proposés avant d'être retenus** (IA-04) ; un refus n'est jamais reproposé | Transparence et contrôle de Mathieu sur ce que Jarvis apprend |
+| D23 | 2026-10-14 | **Budget de contexte** : préfixe fixe (consignes + tous les outils, ≈ 7 400 tokens mesurés) gardé tel quel pour rester en cache ; historique ancien retiré, longueur de réponse adaptée à la place, réflexion coupée si elle ne tient pas ; 22 outils en jeu, 38 outils essentiels si `llm.contexte` est trop petit | Mesuré : 69 outils = 6 992 tokens, soit presque tout un emplacement de 8 192 ; la sélection dynamique d'outils casserait le cache du préfixe (réutilisé à 99 % d'une requête à l'autre) |
+| D24 | 2026-10-14 | **Garde d'honnêteté** : demande d'action + réponse qui affirme l'avoir faite + aucun outil appelé → une relance du modèle, puis « Correction : je ne l'ai pas fait » | Observé en réel : « Je vais vous rappeler… » sans rappel créé |
+| D25 | 2026-10-14 | Rappels (« dans 10 minutes », « à 18 h 30 », « demain à 9 h ») et « Retiens que… » en commandes rapides, sans le modèle | Les plus fréquentes et les plus mal traitées par un petit modèle ; formulation incertaine → citation fidèle plutôt qu'une conjugaison fausse |
 | D19 | 2026-10-13 | Transcription anticipée dès 200 ms de silence | Masque le temps de transcription ; gain non mesurable sur le portable (bruit ±600 ms), à confirmer au banc |
 
 ## Valeurs provisoires (en attendant le PC de jeu)

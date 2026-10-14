@@ -67,6 +67,10 @@ class DetecteurJeu:
                                                        cache_kv=c.cache_kv))
                 if j.serveur_llm.processus:
                     regler_processus(j.serveur_llm.processus.pid, True)
+                # Préfixe réduit (outils de jeu) mis en cache pendant le chargement de la partie :
+                # la 1re question en jeu n'attend pas l'évaluation du prompt sur CPU
+                if hasattr(j, "prechauffer"):
+                    await j.prechauffer()
             except Exception:  # noqa: BLE001
                 log.exception("Modèle de mode jeu non démarré")
         j.bus.publier("jeu", etat="actif", jeu=jeu, bascule_ms=round(1000 * (time.monotonic() - debut)))

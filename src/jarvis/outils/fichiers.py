@@ -35,11 +35,48 @@ CATEGORIES = {
 DUREE_MAX_PARCOURS_S = 8
 
 
+# Dossiers connus de Windows (KNOWNFOLDERID) : avec la sauvegarde OneDrive, le Bureau est
+# souvent ~/OneDrive/Bureau et non ~/Desktop ; Windows seul sait où il est vraiment.
+DOSSIERS_CONNUS = {
+    "Desktop": "{B4BFCC3A-DB2C-424C-B029-7FE99A87C641}",
+    "Documents": "{FDD39AD0-238F-46AF-ADB4-6C85480369C7}",
+    "Downloads": "{374DE290-123F-4565-9164-39C4925E467B}",
+    "Pictures": "{33E28130-4E1E-4676-835A-98395C3BC3BB}",
+    "Videos": "{18989B1D-99B5-455B-841C-AB7C74E4DDFC}",
+    "Music": "{4BD8D571-6D19-48D3-BE97-422220080E43}",
+}
+
+
+def dossier_connu(nom: str) -> Path:
+    """Emplacement réel d'un dossier de l'utilisateur (Desktop, Documents…), repli sur ~/<nom>."""
+    if win.WINDOWS and nom in DOSSIERS_CONNUS:
+        import ctypes
+        import uuid
+
+        class GUID(ctypes.Structure):
+            _fields_ = [("d1", ctypes.c_uint32), ("d2", ctypes.c_uint16), ("d3", ctypes.c_uint16),
+                        ("d4", ctypes.c_ubyte * 8)]
+
+        u = uuid.UUID(DOSSIERS_CONNUS[nom])
+        guid = GUID(u.time_low, u.time_mid, u.time_hi_version, (ctypes.c_ubyte * 8)(*u.bytes[8:]))
+        chemin = ctypes.c_wchar_p()
+        try:
+            if ctypes.windll.shell32.SHGetKnownFolderPath(ctypes.byref(guid), 0, None, ctypes.byref(chemin)) == 0:
+                return Path(chemin.value)
+        except (OSError, AttributeError):
+            pass
+        finally:
+            if chemin:
+                ctypes.windll.ole32.CoTaskMemFree(chemin)
+    return Path.home() / nom
+
+
 def dossiers_utilisateur() -> list[Path]:
     accueil = Path.home()
-    noms = ["Desktop", "Bureau", "Documents", "Downloads", "Téléchargements", "Pictures", "Images", "Videos",
-            "Vidéos", "Music", "Musique", "OneDrive"]
-    return [accueil / n for n in noms if (accueil / n).exists()]
+    trouves = [dossier_connu(n) for n in DOSSIERS_CONNUS]
+    trouves += [accueil / n for n in ("Bureau", "Téléchargements", "Images", "Vidéos", "Musique", "OneDrive")]
+    uniques = dict.fromkeys(p for p in trouves if p.exists())
+    return list(uniques)
 
 
 def resoudre(chemin: str) -> Path:
@@ -51,8 +88,11 @@ def resoudre(chemin: str) -> Path:
     alias = {"bureau": "Desktop", "téléchargements": "Downloads", "telechargements": "Downloads",
              "images": "Pictures", "vidéos": "Videos", "musique": "Music", "documents": "Documents"}
     premier, *reste = p.parts or ("",)
+    alias |= {"desktop": "Desktop", "downloads": "Downloads", "pictures": "Pictures", "videos": "Videos",
+              "music": "Music", "vidéo": "Videos"}
     if premier.lower() in alias:
-        return Path.home() / alias[premier.lower()] / Path(*reste) if reste else Path.home() / alias[premier.lower()]
+        base = dossier_connu(alias[premier.lower()])
+        return base / Path(*reste) if reste else base
     return Path.home() / p
 
 
@@ -318,13 +358,17 @@ class AnnulerOperation(Outil):
 
 class CreerDossier(Outil):
     nom = "creer_dossier"
-    description = "Crée un dossier."
+    description = "Crée un dossier (« Bureau/Projets », « Documents/Factures 2026 »), dans un dossier qui existe déjà."
     parametres = {"type": "object", "properties": {"chemin": {"type": "string"}}, "required": ["chemin"]}
     niveau = Niveau.REVERSIBLE
 
     async def executer(self, ctx: Contexte, chemin: str) -> Resultat:
         p = resoudre(chemin)
-        p.mkdir(parents=True, exist_ok=True)
+        if not p.parent.is_dir():
+            # Un seul niveau à la fois : un chemin inventé ne crée pas toute une arborescence
+            return Resultat.echec(f"Le dossier parent {p.parent} n'existe pas. Vérifie le chemin "
+                                  f"(ex. « Bureau/{p.name} ») ou demande à Mathieu où le créer.")
+        p.mkdir(exist_ok=True)
         return Resultat(True, f"Dossier {p} prêt.", donnees={"p": str(p)})
 
     async def verifier(self, ctx, args, resultat) -> bool | None:

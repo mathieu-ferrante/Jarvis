@@ -81,20 +81,24 @@ class ClientLLM:
     async def fermer(self) -> None:
         await self._http.aclose()
 
-    def _corps(self, messages: list[dict], outils: list[dict] | None, max_tokens: int, flux: bool,
+    def _corps(self, messages: list[dict], outils: list[dict] | None, max_tokens: int | None, flux: bool,
                reflexion: bool = False) -> dict:
+        if max_tokens is None:  # par défaut : place pour la réflexion si elle est demandée
+            max_tokens = 4096 if reflexion else 1024
         corps: dict = {"messages": messages, "max_tokens": max_tokens, "temperature": self.temperature,
                        "stream": flux, "chat_template_kwargs": {"enable_thinking": reflexion},
-                       "cache_prompt": True}
+                       "cache_prompt": True,
+                       # Échantillonneur DRY de llama.cpp : pénalise les séquences déjà produites (le
+                       # 14/10, le petit modèle a répété la même phrase pendant 100 s sans lui)
+                       "dry_multiplier": 0.8, "dry_base": 1.75, "dry_allowed_length": 2}
         if reflexion:
-            corps["max_tokens"] = max(max_tokens, 4096)
             corps["temperature"] = max(self.temperature, 0.6)  # valeur recommandée en mode réflexion
         if outils:
             corps["tools"] = outils
         return corps
 
     async def discuter(self, messages: list[dict], outils: list[dict] | None = None,
-                       max_tokens: int = 1024, reflexion: bool = False) -> Reponse:
+                       max_tokens: int | None = None, reflexion: bool = False) -> Reponse:
         r = await self._http.post(self.url + "/v1/chat/completions",
                                   json=self._corps(messages, outils, max_tokens, False, reflexion))
         r.raise_for_status()
@@ -110,7 +114,7 @@ class ClientLLM:
         )
 
     async def diffuser(self, messages: list[dict], outils: list[dict] | None = None,
-                       max_tokens: int = 1024, reflexion: bool = False) -> AsyncIterator[Evenement]:
+                       max_tokens: int | None = None, reflexion: bool = False) -> AsyncIterator[Evenement]:
         """Diffuse la réponse : « pensee » (réflexion, jamais lue), « texte », puis « fin » avec le tout."""
         texte = ""
         appels: dict[int, dict] = {}

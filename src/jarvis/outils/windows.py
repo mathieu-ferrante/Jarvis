@@ -104,11 +104,17 @@ def mettre_a_la_corbeille(chemin: Path) -> bool:
     return ctypes.windll.shell32.SHFileOperationW(ctypes.byref(op)) == 0 and not op.fAnyOperationsAborted
 
 
+def _bureau_reel() -> Path:
+    from jarvis.outils.fichiers import dossier_connu  # import tardif : fichiers importe ce module
+
+    return dossier_connu("Desktop")
+
+
 def dossiers_menu_demarrer() -> list[Path]:
     dossiers = [Path(os.environ.get("APPDATA", "")) / "Microsoft/Windows/Start Menu/Programs",
                 Path(os.environ.get("PROGRAMDATA", r"C:\ProgramData")) / "Microsoft/Windows/Start Menu/Programs",
-                Path.home() / "Desktop", Path(os.environ.get("PUBLIC", r"C:\Users\Public")) / "Desktop"]
-    return [d for d in dossiers if d.exists()]
+                Path.home() / "Desktop", _bureau_reel(), Path(os.environ.get("PUBLIC", r"C:\Users\Public")) / "Desktop"]
+    return list(dict.fromkeys(d for d in dossiers if d.exists()))
 
 
 def cible_raccourci(lnk: Path) -> str:
